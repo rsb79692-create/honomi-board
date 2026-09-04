@@ -232,35 +232,21 @@ var FIREBASE_CONFIG = {
     var ceo  = isCeo();
     var you  = partyLabel(false);   /* 社長から見た相手（現場側） */
     var boss = partyLabel(true);    /* 現場から見た相手（社長） */
-    /* ビジョンと指針は社長が書く欄。報告と相談は現場が書く欄。
-       どちらを「自分」と見るかで向きが変わるので、閲覧者基準で組み立てる。 */
+    /* 見出しは閲覧者から見た向きで組み立てる（本人が自分を三人称で呼ばないように）。 */
     var vision = ceo ? "わたしのビジョン" : (boss ? boss + "のビジョン" : "ビジョン");
-    var report = ceo ? (you ? you + "からの報告" : "報告")
-                     : (boss ? boss + "への報告" : "報告");
-    var ask    = ceo ? (you ? you + "からの相談" : "相談")
-                     : (boss ? boss + "への相談" : "相談");
     var guide  = ceo ? (you ? you + "への指針" : "指針")
                      : (boss ? boss + "からの指針" : "指針");
-    /* 各欄の書き手は片側だけ（voice が書き手）。もう片方は読んで「見た」とコメントで返す。
-       書けない側には、誰が書く場所なのかを出す。 */
+    /* 画面に出すのは「ビジョン」と「指針」だけ。どちらも社長が書き、現場側は読む欄。
+       報告(toCeo)・相談(mgrAsk) は UI から外す。データは消さず残したままにする
+       （board() は4キーとも保持するので、保存しても既存データは失われない）。 */
     var lockedByBoss = function (tail) {
       return (boss || "社長") + "が書く場所です。" + tail;
-    };
-    var lockedByYou = function (tail) {
-      return you ? you + "が書く場所です。" + tail
-                 : "この部屋にはまだ相手がいません。設定から相手を入れてください。";
     };
     var READ = "目を通したら「見た」を押してください。";
     return [
       { key: "ceoMind", voice: "ceo", title: vision,
-        desc: "", locked: lockedByBoss("読んで、気になったらコメントしてください。"),
+        desc: "", locked: lockedByBoss(READ), noReply: true,
         ph: "いま頭にあることを、まとまっていなくても書く" },
-      { key: "toCeo", voice: "mgr", title: report,
-        desc: "", locked: lockedByYou(READ),
-        ph: "現場で見えたこと、気づいたことを書く" },
-      { key: "mgrAsk", voice: "mgr", title: ask,
-        desc: "", locked: lockedByYou(READ),
-        ph: "相談したいこと・提案を書く" },
       { key: "toManager", voice: "ceo", title: guide,
         desc: "", locked: lockedByBoss(READ),
         ph: "考え方・判断・伝えておきたいことを書く" }
@@ -487,12 +473,12 @@ var FIREBASE_CONFIG = {
       '<div class="meta"><span>' + esc(nameOfUid(it.by)) + "</span><span>" + ago(it.createdAt) + "</span>" +
       (mine && seenByOther ? "<span>相手が見た</span>" : "") + "</div>";
 
-    (it.replies ? toArr(it.replies) : []).forEach(function (r) {
+    if (!opts.noReply) (it.replies ? toArr(it.replies) : []).forEach(function (r) {
       h += '<div class="reply"><div class="meta"><span style="font-weight:700">' +
         esc(nameOfUid(r.by)) + "</span><span>" + ago(r.createdAt) + "</span></div><p>" + esc(r.text) + "</p></div>";
     });
 
-    if (ui.replyOpen === it.id) {
+    if (!opts.noReply && ui.replyOpen === it.id) {
       h += '<div class="rin"><input id="replyInput" value="' + esc(ui.replyDraft) +
         '" placeholder="コメントを書く"><button class="send plain" data-act="rsend" data-list="' +
         key + '" data-id="' + it.id + '">送る</button></div>';
@@ -501,7 +487,8 @@ var FIREBASE_CONFIG = {
     h += '</div><div class="side">';
     if (!mine && !(it.seenBy && it.seenBy[me.uid]))
       h += '<button data-act="seen" data-list="' + key + '" data-id="' + it.id + '">見た</button>';
-    if (!mine) h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
+    if (!mine && !opts.noReply)
+      h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
     if (mine || opts.anyDelete)
       h += '<button data-act="del" data-list="' + key + '" data-id="' + it.id + '">削除</button>';
     return h + "</div></article>";
@@ -527,7 +514,9 @@ var FIREBASE_CONFIG = {
                     : '<p class="empty">' + esc(s.locked) + "</p>";
       if (items.length) {
         h += '<div class="list">';
-        items.forEach(function (it) { h += itemHtml(s.key, it, { anyDelete: isCeo() }); });
+        items.forEach(function (it) {
+          h += itemHtml(s.key, it, { anyDelete: isCeo(), noReply: !!s.noReply });
+        });
         h += "</div>";
       }
       return h + "</section>";
