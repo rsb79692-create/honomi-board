@@ -213,18 +213,18 @@ var FIREBASE_CONFIG = {
     var a = conf.ceoName || "社長";
     return [
       { key: "ceoMind", voice: "ceo", title: a + "ビジョン",
-        desc: "今考えていること、気になっていること、会社として進めたいこと。",
-        locked: a + "さんが書く場所です。読んで、気になったらコメントしてください。",
+        desc: "",
+        locked: "",
         ph: "いま頭にあることを、まとまっていなくても書く", ceoOnly: true },
       { key: "toCeo", voice: "mgr", title: "現場からの報告",
-        desc: "現場で見えたこと、起きていること、気づいたこと。",
+        desc: "",
         locked: "", ph: "現場で見えたこと、気づいたことを書く", ceoOnly: false },
       { key: "mgrAsk", voice: "mgr", title: a + "への相談",
-        desc: "迷っていること、判断を仰ぎたいこと、こうしたらどうかという案。",
+        desc: "",
         locked: "", ph: "相談したいこと・提案を書く", ceoOnly: false },
       { key: "toManager", voice: "ceo", title: a + "からの指針",
-        desc: "どう考えているか、何を決めたか、先に伝えておきたいこと。",
-        locked: a + "さんが書く場所です。目を通したら「見た」を押してください。",
+        desc: "",
+        locked: "",
         ph: "考え方・判断・伝えておきたいことを書く", ceoOnly: true }
     ];
   }
@@ -295,7 +295,6 @@ var FIREBASE_CONFIG = {
   /* ---------- 入口 ---------- */
   function gateHtml() {
     return '<div class="gate"><h1>穂乃味ボード</h1>' +
-      "<p>メールアドレスとパスワードを入れてください。</p>" +
       '<input id="mail" type="email" inputmode="email" placeholder="メールアドレス" autocomplete="username">' +
       '<input id="pw" type="password" placeholder="パスワード" autocomplete="current-password" style="margin-top:8px">' +
       '<button data-act="login">開く</button>' +
@@ -362,11 +361,10 @@ var FIREBASE_CONFIG = {
     if (ui.settings && isCeo()) h += settingsHtml();
 
     if (ui.tab === "board") {
-      h += ids.length ? boardHtml(SEC) :
-        '<p class="empty">' + (isCeo() ? "＋を押して部屋を作ってください。" : "まだ部屋に入っていません。") + "</p>";
+      h += ids.length ? boardHtml(SEC) : "";
     } else h += fieldHtml(stale, cold);
 
-    h += '<div class="foot"><span class="sub">同じ部屋の人だけが見られます</span></div></div>';
+    h += "</div>";
 
     var act = document.activeElement;
     var keepKey = act && act.getAttribute ? act.getAttribute("data-draft") : null;
@@ -380,9 +378,8 @@ var FIREBASE_CONFIG = {
 
   function newRoomHtml() {
     var h = '<div class="panel"><h3>部屋を作る</h3>' +
-      "<p>入れた人だけが、この部屋の中身を見られます。あとから足すことも外すこともできます。</p>" +
       '<div class="field"><label>部屋の名前</label>' +
-      '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="例：谷村さん／施設長会"></div>';
+      '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="部屋の名前"></div>';
     Object.keys(members).forEach(function (u) {
       if (u === me.uid) return;
       var m = members[u] || {};
@@ -399,7 +396,7 @@ var FIREBASE_CONFIG = {
       '<div class="field"><label>あなたの表示名</label>' +
       '<input data-cfg="ceoName" value="' + esc(conf.ceoName || "") + '" placeholder="谷口"></div>';
 
-    h += '<h3 style="margin-top:18px">部屋</h3><p>入っている人を変えたいときはここから。</p>';
+    h += '<h3 style="margin-top:18px">部屋</h3>';
     myRooms().forEach(function (rid) {
       var r = rooms[rid];
       var who = Object.keys(r.members || {}).filter(function (u) { return u !== me.uid; })
@@ -410,8 +407,7 @@ var FIREBASE_CONFIG = {
         '<button data-act="delroom" data-id="' + rid + '">削除</button></div>';
     });
 
-    h += '<h3 style="margin-top:18px">利用者</h3>' +
-      "<p>辞めた人は「止める」を押せば、その場で全部の部屋が見えなくなります。</p>";
+    h += '<h3 style="margin-top:18px">利用者</h3>';
     Object.keys(members).forEach(function (u) {
       var m = members[u] || {};
       if (u === me.uid) {
@@ -431,7 +427,7 @@ var FIREBASE_CONFIG = {
     if (ui.invite) {
       h += '<div class="field"><label>名前</label><input id="invName" placeholder="谷村"></div>' +
         '<div class="field"><label>メールアドレス</label><input id="invMail" type="email" placeholder="mail@example.com"></div>' +
-        '<div class="field"><label>最初のパスワード（6文字以上）</label><input id="invPw" type="text" placeholder="本人に伝えて、あとで変えてもらう"></div>' +
+        '<div class="field"><label>最初のパスワード（6文字以上）</label><input id="invPw" type="text" placeholder="6文字以上"></div>' +
         '<button class="btn" data-act="doinvite">登録する</button>' +
         '<button class="btn ghost" data-act="invite" style="margin-left:8px">やめる</button>';
     } else {
@@ -484,11 +480,10 @@ var FIREBASE_CONFIG = {
       var open = items.filter(function (x) { return !x.done; });
       var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
         '<h2 class="sec-t">' + esc(s.title) + '</h2><span class="sec-n">' + open.length + "件</span></div>" +
-        '<p class="sec-d">' + esc(s.desc) + "</p>";
+        (s.desc ? '<p class="sec-d">' + esc(s.desc) + "</p>" : "");
       var canWrite = s.ceoOnly ? isCeo() : true;
-      h += canWrite ? compHtml(s.key, s.ph) : '<p class="empty">' + esc(s.locked) + "</p>";
-      if (!items.length) h += '<p class="empty">まだ何もありません。</p>';
-      else {
+      if (canWrite) h += compHtml(s.key, s.ph);
+      if (items.length) {
         h += '<div class="list">';
         items.forEach(function (it) { h += itemHtml(s.key, it, { anyDelete: isCeo() }); });
         h += "</div>";
@@ -513,8 +508,7 @@ var FIREBASE_CONFIG = {
     h += '</select><button data-act="editlist">' + (ui.editList ? "リストを閉じる" : "施設リスト") + "</button></div>";
 
     if (ui.editList) {
-      h += '<div class="panel"><h3>施設リスト</h3>' +
-        "<p>ここに登録した施設が、上の選択と案件・スタッフの選択肢になります。</p>";
+      h += '<div class="panel"><h3>施設リスト</h3>';
       field.facilities.forEach(function (f) {
         h += '<div class="pline"><input value="' + esc(f.name) + '" data-list="facilities" data-id="' + f.id +
           '" data-field="name" placeholder="施設名">' +
@@ -524,7 +518,6 @@ var FIREBASE_CONFIG = {
     }
 
     var shown = field.facilities.filter(function (f) { return !ui.pick || f.id === ui.pick; });
-    if (!field.facilities.length) h += '<p class="empty">「施設リスト」を開いて施設を登録してください。</p>';
 
     shown.forEach(function (f) {
       var key = "fac:" + f.id;
@@ -543,9 +536,7 @@ var FIREBASE_CONFIG = {
     var open = field.cases.filter(function (c) { return !c.done && match(c); });
     var done = field.cases.filter(function (c) { return c.done; });
     h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">対応中の案件</h2>' +
-      '<span class="sec-n">' + open.length + "件</span></div>" +
-      '<p class="sec-d">7日動かないと上の「止まっているもの」に出ます。手を打ったら「動いた」を押してください。</p>';
-    if (!open.length) h += '<p class="empty">対応中の案件はありません。</p>';
+      '<span class="sec-n">' + open.length + "件</span></div>";
     open.forEach(function (c) {
       var st = now() - c.updatedAt > 7 * DAY;
       h += '<div class="row' + (st ? " stale" : "") + '"><div class="row-h">' +
@@ -566,9 +557,7 @@ var FIREBASE_CONFIG = {
 
     var staff = field.staff.filter(match);
     h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">スタッフで気になること</h2>' +
-      '<span class="sec-n">' + staff.length + "人</span></div>" +
-      '<p class="sec-d">14日話せていない人は上に出ます。声をかけたら「話した」を押してください。</p>';
-    if (!staff.length) h += '<p class="empty">気になっている人を書いておくと、放置に気づけます。</p>';
+      '<span class="sec-n">' + staff.length + "人</span></div>";
     staff.forEach(function (p) {
       var isCold = now() - (p.followedAt || 0) > 14 * DAY;
       h += '<div class="row' + (isCold ? " stale" : "") + '"><div class="row-h">' +
