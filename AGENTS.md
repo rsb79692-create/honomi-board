@@ -106,8 +106,8 @@ field/{ facilities, staff, cases }
 ```
 
 - 旧形式の `author:"ceo"/"mgr"` は `by:<UID>`、`seen:true` は `seenBy:{相手UID:true}` へ変換済み。
-- 社長 = `zhTcuHSahOXKHwWY7tQjV5FzptO2`（rsb79692@gmail.com）
-- 谷村 = `4Ir6ivrl1ROiUdX4xPo4u0AThJz1`（honomi1209izumi@gmail.com）
+- 実際の UID・メールアドレスは**このリポジトリが public のため記載しない**。
+  必要なときは Firebase コンソールか `members` ノードを直接見ること。
 
 ---
 
