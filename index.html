@@ -10,6 +10,9 @@
     --paper:#E7E9E2; --surface:#FCFCFA; --ink:#1D2226; --ink2:#5E666C; --ink3:#8D9499;
     --line:#D3D6CB; --ceo:#2E4A6B; --mgr:#55457A; --ok:#4C8055; --warn:#C88F1E; --bad:#B8443A;
   }
+  /* textarea の高さを測る一瞬にスクロールバーが出入りすると本文幅が変わり、
+     行数を読み違えて最後の行が切れる。バーの幅を常に確保しておく。 */
+  html { scrollbar-gutter: stable; }
   html, body { margin:0; padding:0; background:var(--paper); }
   body { font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif;
     color:var(--ink); -webkit-font-smoothing:antialiased; padding-bottom:48px; }
@@ -55,42 +58,50 @@
   .sec[data-v="ceo"] { border-left-color:var(--ceo); }
   .sec[data-v="mgr"] { border-left-color:var(--mgr); }
   .sec-h { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-  .sec-t { font-size:15px; font-weight:700; margin:0; }
+  .sec-t { font-size:17px; font-weight:700; margin:0; }
   .sec-n { font-size:11px; color:var(--ink3); }
   .sec-d { font-size:12px; color:var(--ink2); margin:3px 0 10px; line-height:1.6; }
 
-  .comp { background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:9px 10px; margin-top:8px; }
-  .comp textarea { width:100%; border:0; resize:none; font-family:inherit; font-size:14px; line-height:1.65;
-    background:transparent; color:var(--ink); min-height:44px; }
-  .comp textarea:focus { outline:none; }
-  .comp textarea::placeholder { color:var(--ink3); }
-  .comp-b { display:flex; align-items:center; margin-top:6px; }
   .send { margin-left:auto; padding:6px 14px; font-size:13px; font-weight:600; border:0; border-radius:3px;
     background:var(--ink); color:#fff; }
   .send.plain { margin-left:0; }
 
-  .list { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; }
-  .item { display:flex; align-items:flex-start; gap:6px; padding:9px 8px 9px 4px;
-    border-top:1px solid var(--line); background:var(--surface); }
-  .item:first-child { border-top:0; }
-  .item[data-done="1"] .text { color:var(--ink3); text-decoration:line-through; }
-  .item.dragging { opacity:.5; }
-  .grip { align-self:stretch; width:28px; min-height:40px; border:0; background:transparent; padding:0;
-    color:#BFC4BB; font-size:15px; letter-spacing:1px; cursor:grab; touch-action:none; }
-  .grip:hover { color:var(--ink2); background:#F1F2EC; }
+  /* 1項目＝1枚のノート。中身は複数ブロック。 */
+  .note { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; }
+  .blk { display:flex; align-items:flex-start; flex-wrap:wrap; }
+  .blk + .blk { border-top:1px solid #E2E4DC; }
+  .blk:focus-within { background:#F1F2EC; box-shadow:inset 3px 0 0 var(--ceo); }
+  .blk.dragging { opacity:.4; }
+  .grip { flex:none; align-self:stretch; width:32px; min-height:44px; border:0; background:transparent;
+    padding:0; color:var(--ink3); font-size:15px; line-height:1; cursor:grab; touch-action:none;
+    border-radius:3px 0 0 3px; }
+  .grip:hover { color:var(--ink); background:#F1F2EC; }
   .grip:active { cursor:grabbing; }
-  .ibody { flex:1; min-width:0; }
-  .side { display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:none; padding-top:1px; }
-  .side button { background:none; border:0; padding:1px 0; font-size:12px; font-weight:600; color:var(--ink2); }
-  .side button[data-act="del"] { color:var(--ink3); font-weight:400; }
-  .text { font-size:14px; line-height:1.7; white-space:pre-wrap; word-break:break-word; margin:0; }
-  .meta { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--ink3); margin-top:4px; flex-wrap:wrap; }
-  .reply { margin-top:9px; padding-left:10px; border-left:2px solid var(--line); }
-  .reply p { margin:0; font-size:13px; line-height:1.65; white-space:pre-wrap; }
+  .grip.ghost { cursor:default; }
+  .btxt { flex:1; min-width:0; display:block; width:100%; margin:0; border:0; background:transparent;
+    font-family:inherit; font-size:16px; line-height:1.75; color:var(--ink); padding:10px 6px 10px 0;
+    resize:none; overflow:hidden; white-space:pre-wrap; word-break:break-word; }
+  .btxt:focus { outline:none; }
+  .btxt::placeholder { color:var(--ink3); }
+  .bx { flex:none; align-self:flex-start; margin:9px 4px 0 0; min-width:30px; height:30px; border:0;
+    border-radius:3px; background:transparent; color:var(--ink3); font-size:15px; line-height:1; padding:0; }
+  .blk .bx:hover { background:#F1F2EC; color:var(--bad); }
+  /* 消す確認は行の下へ折り返して出す（本文の幅を変えず、押す位置がずれないように） */
+  .ask { flex:0 0 100%; display:flex; align-items:center; gap:14px; padding:0 10px 10px 32px;
+    font-size:12px; color:var(--ink2); }
+  .ask button { border:0; background:none; padding:3px 6px; font-size:12px; font-weight:700; color:var(--bad); }
+  .ask button.no { color:var(--ink3); font-weight:400; }
+  .empty { font-size:13px; color:var(--ink2); line-height:1.7; padding:12px 0 2px; margin:0; }
+  /* 現場マネジメントの「＋追加」で出る入力行 */
   .rin { display:flex; gap:6px; margin-top:8px; }
-  .rin input { flex:1; border:1px solid var(--line); border-radius:3px; padding:8px 9px; font-size:13px;
+  .rin input { flex:1; min-width:0; border:1px solid var(--line); border-radius:3px; padding:8px 9px; font-size:16px;
     font-family:inherit; background:var(--surface); color:var(--ink); }
-  .empty { font-size:13px; color:var(--ink3); line-height:1.7; padding:12px 0 2px; margin:0; }
+  @media (max-width:480px) {
+    .grip { width:44px; }
+    .bx { min-width:44px; height:44px; margin-top:4px; }
+    .ask { padding-left:44px; gap:18px; }
+    .ask button { min-height:44px; padding:0 12px; }
+  }
 
   .alert { margin-top:14px; border:1px solid var(--bad); border-radius:4px; background:var(--surface); overflow:hidden; }
   .alert-h { padding:9px 12px; font-size:13px; font-weight:700; color:var(--bad); border-bottom:1px solid var(--line); }
@@ -126,11 +137,10 @@
   .fac { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:12px; overflow:hidden; }
   .fac-h { display:flex; align-items:center; gap:10px; padding:11px 12px; border-bottom:1px solid var(--line); }
   .dot { width:16px; height:16px; border-radius:50%; flex:none; border:0; padding:0; }
-  .fac-n { font-size:15px; font-weight:700; flex:1; }
+  .fac-n { font-size:17px; font-weight:700; flex:1; }
   .fac-d { font-size:11px; color:var(--ink3); }
-  .fac .list { border:0; border-radius:0; margin:0; }
-  .fac .item { border-top:1px solid var(--line); }
-  .fac .comp { border:0; border-top:1px solid var(--line); border-radius:0; margin:0; background:#FAFAF7; }
+  .fac .note { border:0; border-radius:0; margin:0; }
+  .fac .hint { margin:0; padding:8px 12px 0; font-size:12px; color:var(--ink2); line-height:1.6; }
 
   .row { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; padding:10px 12px; }
   .row.stale { border-color:var(--bad); }
@@ -184,12 +194,25 @@ var FIREBASE_CONFIG = {
   var members = {};              /* uid -> {name, mail, role, active} */
   var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
   var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
-  var roomRefs = {}, saveTimers = {};
+  var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {};
 
-  var ui = { tab: "board", room: "", saving: "", draft: {}, replyOpen: null, replyDraft: "",
+  var ui = { tab: "board", room: "", saving: "",
+             newId: {}, confirmDel: "", fresh: {}, focusAdd: false,
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
              settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
              invite: false, gateErr: "", msg: "" };
+
+  /* 直接編集中の1行。DBの往復で入力中の文字が巻き戻らないように上書き表示する。 */
+  var edit = null;              /* { pk, val, live } */
+  /* 日本語入力（IME）変換中は描き直さない。
+     compositionend を取りこぼしても止まったままにならないよう、時間で失効させる。 */
+  var composeAt = 0;
+  function composing() { return composeAt !== 0 && Date.now() - composeAt < 10000; }
+  var pendingRender = false, rendering = false;
+  /* ボタンを押している最中に画面を作り直すと、その操作が取りこぼされる。
+     指・マウスを離すまで描き直しを待たせる（1秒で自動的に解除する）。 */
+  var heldAt = 0;
+  function held() { return heldAt !== 0 && Date.now() - heldAt < 1000; }
 
   var isCeo = function () { return me && me.role === "ceo"; };
   function nameOfUid(u) {
@@ -199,7 +222,9 @@ var FIREBASE_CONFIG = {
   }
   function room() { return rooms[ui.room] || null; }
   function board() {
-    var r = room(); if (!r) return EMPTY_BOARD;
+    var r = room();
+    /* 部屋が無いときに共有の定数を返すと、書き換えが全部屋へ波及する */
+    if (!r) return JSON.parse(JSON.stringify(EMPTY_BOARD));
     if (!r.board) r.board = JSON.parse(JSON.stringify(EMPTY_BOARD));
     return r.board;
   }
@@ -237,20 +262,14 @@ var FIREBASE_CONFIG = {
     var guide  = ceo ? (you ? you + "への指針" : "指針")
                      : (boss ? boss + "からの指針" : "指針");
     /* 画面に出すのは「ビジョン」と「指針」だけ。どちらも社長が書き、現場側は読む欄。
-       報告(toCeo)・相談(mgrAsk) は UI から外す。データは消さず残したままにする
-       （board() は4キーとも保持するので、保存しても既存データは失われない）。 */
-    var lockedByBoss = function (tail) {
-      return (boss || "社長") + "が書く場所です。" + tail;
-    };
-    var READ = "目を通したら「見た」を押してください。";
+       報告(toCeo)・相談(mgrAsk) は UI から外すが、データは消さず残したままにする。
+       保存は rooms/{rid}/board/{key} と欄ごとに書くので、この2キーには一切触れない。 */
+    var locked = (boss || "社長") + "が書く場所です。読むだけの欄です。";
     return [
-      { key: "ceoMind", voice: "ceo", title: vision,
-        desc: "", locked: (boss || "社長") + "が書く場所です。読むだけの欄です。",
-        noReply: true, noSeen: true,
-        ph: "いま頭にあることを、まとまっていなくても書く" },
-      { key: "toManager", voice: "ceo", title: guide,
-        desc: "", locked: lockedByBoss(READ),
-        ph: "考え方・判断・伝えておきたいことを書く" }
+      { key: "ceoMind", voice: "ceo", title: vision, locked: locked,
+        ph: "いま頭にあることを書く" },
+      { key: "toManager", voice: "ceo", title: guide, locked: locked,
+        ph: "伝えておきたいことを書く" }
     ];
   }
 
@@ -264,6 +283,11 @@ var FIREBASE_CONFIG = {
     var d = Math.floor((now() - ts) / DAY);
     if (d <= 0) return "今日"; if (d === 1) return "昨日";
     if (d < 31) return d + "日前"; return Math.floor(d / 30) + "か月前";
+  }
+  /* 自分が保存した内容がそのまま返ってきただけのときは描き直さない。
+     入力中に画面を作り直すと、書いている途中の文字とカーソルが飛ぶため。 */
+  function same(a, b) {
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
   }
   function toArr(v) { return Array.isArray(v) ? v : (v ? Object.keys(v).map(function (k) { return v[k]; }) : []); }
   function normBoard(b) {
@@ -279,23 +303,60 @@ var FIREBASE_CONFIG = {
     return o;
   }
 
-  function saveBoard() {
-    var rid = ui.room; if (!rid) return;
-    queue("room:" + rid, function () {
-      return rtdb.ref("rooms/" + rid + "/board").set(JSON.parse(JSON.stringify(board())));
-    });
+  /* 保存の決まりごとは2つ。
+     1. 書き込む中身は「予約した時点」で確定させる
+        （発火までに部屋を切り替えても、別の部屋の内容を書き込まないため）
+     2. 触った欄だけを書く
+        （欄ごと・リストごとに書けば、同じときに他の人が別の欄へ書いた内容を消さない） */
+  /* key はコード内のリテラルだけを渡すこと（RTDB のパスへ連結するため）。
+     DB 由来の値（fac:<id> など）は saveField 側で3つのリテラルへ丸めている。 */
+  function saveBoard(key, wait) {
+    var rid = ui.room; if (!rid || !rooms[rid]) return;
+    var snap = JSON.parse(JSON.stringify(arrFor(key)));
+    queue("board:" + rid + ":" + key, function () {
+      return rtdb.ref("rooms/" + rid + "/board/" + key).set(snap);
+    }, wait, key);
   }
-  function saveField() {
-    queue("field", function () { return rtdb.ref("field").set(JSON.parse(JSON.stringify(field))); });
+  function saveField(key, wait) {
+    /* 施設メモ（fac:<id>）は facilities の中にあるので、facilities ごと書く */
+    var top = key && key.indexOf("fac:") === 0 ? "facilities" : key;
+    if (top !== "facilities" && top !== "staff" && top !== "cases") {
+      var all = JSON.parse(JSON.stringify(field));
+      queue("field", function () { return rtdb.ref("field").set(all); }, wait, key);
+      return;
+    }
+    var snap = JSON.parse(JSON.stringify(field[top] || []));
+    queue("field:" + top, function () { return rtdb.ref("field/" + top).set(snap); }, wait, key);
   }
-  function queue(k, fn) {
+  /* 自動保存。1文字ごとには書かず、入力が止まってからまとめて1回書く。 */
+  function queue(k, fn, wait, owner) {
     ui.saving = "保存中";
     paintStatus();
+    savePend[k] = { fn: fn, owner: owner || "" };
     clearTimeout(saveTimers[k]);
-    saveTimers[k] = setTimeout(function () {
-      fn().then(function () { ui.saving = "保存済み"; paintStatus(); })
-          .catch(function (e) { ui.saving = "保存できません（" + e.code + "）"; paintStatus(); });
-    }, 400);
+    saveTimers[k] = setTimeout(function () { runSave(k); }, wait == null ? 400 : wait);
+  }
+  function runSave(k) {
+    var p = savePend[k]; if (!p) return null;
+    delete savePend[k];
+    clearTimeout(saveTimers[k]);
+    return p.fn().then(function () {
+      delete failed[k];
+      ui.saving = Object.keys(failed).length ? ui.saving : "保存済み";
+      paintStatus();
+      /* その欄の保存が届いたら、入力中の上書き表示は役目を終える。
+         失敗したときは解除しない（打った文字を画面に残すため） */
+      if (edit && !edit.live && edit.pk.split("|")[0] === p.owner) edit = null;
+    }).catch(function (e) {
+      /* 失敗の表示は、その欄が保存できるようになるまで消さない */
+      failed[k] = true;
+      ui.saving = "保存できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
+      paintStatus();
+    });
+  }
+  /* 部屋を移る前・ログアウト前に、保留中の保存を出しきる */
+  function flushSaves() {
+    return Promise.all(Object.keys(savePend).map(runSave).filter(Boolean));
   }
   function paintStatus() { var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || ""; }
 
@@ -304,7 +365,10 @@ var FIREBASE_CONFIG = {
   function arrFor(key) {
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (!f) return []; if (!f.items) f.items = []; return f.items; }
     if (key === "facilities" || key === "staff" || key === "cases") return field[key];
-    return board()[key] || [];
+    var r = room(); if (!r) return [];
+    if (!r.board) r.board = JSON.parse(JSON.stringify(EMPTY_BOARD));
+    if (!r.board[key]) r.board[key] = [];
+    return r.board[key];
   }
   function setArr(key, v) {
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.items = v; return; }
@@ -314,7 +378,56 @@ var FIREBASE_CONFIG = {
   function isFieldKey(k) {
     return k.indexOf("fac:") === 0 || k === "facilities" || k === "staff" || k === "cases";
   }
-  function saveFor(key) { if (isFieldKey(key)) saveField(); else saveBoard(); }
+  function saveFor(key, wait) { if (isFieldKey(key)) saveField(key, wait); else saveBoard(key, wait); }
+
+  /* ---------- ノート内ブロックの編集状態 ---------- */
+  function pkOf(key, id) { return key + "|" + id; }
+  /* 末尾の「ここに続けて入力」欄。実体になるまで id を使い回して入力を切らさない。 */
+  function newId(key) { if (!ui.newId[key]) ui.newId[key] = uid(); return ui.newId[key]; }
+  function textOf(key, id) {
+    var o = find(key, id);
+    return o ? String(o.text == null ? "" : o.text) : null;
+  }
+  function shownText(key, it) {
+    if (edit && edit.pk === pkOf(key, it.id)) return edit.val;
+    return String(it.text == null ? "" : it.text);
+  }
+  /* 保存が本当に届いたら上書き表示をやめる。届くまでは入力した文字を消さない。 */
+  function reconcile() {
+    if (!edit || edit.live) return;
+    var p = edit.pk.split("|"), cur = textOf(p[0], p.slice(1).join("|"));
+    if (cur === null || cur === edit.val) edit = null;
+  }
+  /* 入力を反映する。末尾の空欄に書き始めたときだけ、その場で実体を作る。
+     実体を作ったときは true を返す（画面はその場で作り替える。描き直すと入力が途切れるため）。 */
+  function applyEdit(key, id, val) {
+    edit = { pk: pkOf(key, id), val: val, live: true };
+    var o = find(key, id);
+    if (o) { o.text = val; saveFor(key, 700); return false; }
+    if (!val) return false;
+    arrFor(key).push({ by: me.uid, createdAt: now(), id: id, text: val });
+    ui.fresh[pkOf(key, id)] = true;
+    if (ui.newId[key] === id) delete ui.newId[key];
+    if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.updatedAt = now(); }
+    saveFor(key, 700);
+    return true;
+  }
+  /* 編集中の行を確定する。
+     いま自分で作ったばかりの行が空のままなら片づける。
+     もとからあった行は、空にしても勝手には消さない（× → 消す で消してもらう）。 */
+  function commitEdit() {
+    if (!edit) return false;
+    edit.live = false;
+    var p = edit.pk.split("|"), key = p[0], id = p.slice(1).join("|");
+    var o = find(key, id), gone = false;
+    if (o && !String(o.text == null ? "" : o.text).trim() && ui.fresh[edit.pk]) {
+      setArr(key, arrFor(key).filter(function (x) { return x.id !== id; }));
+      delete ui.fresh[edit.pk];
+      edit = null; gone = true;
+    }
+    if (o) saveFor(key, 0);
+    return gone;
+  }
   function find(key, id) { return arrFor(key).filter(function (x) { return x.id === id; })[0]; }
 
   /* ---------- 入口 ---------- */
@@ -328,34 +441,73 @@ var FIREBASE_CONFIG = {
   }
 
   function captureDrafts() {
-    var t = document.querySelectorAll("textarea[data-draft]");
-    for (var i = 0; i < t.length; i++) ui.draft[t[i].getAttribute("data-draft")] = t[i].value;
-    var r = document.querySelector("#replyInput"); if (r) ui.replyDraft = r.value;
     var a = document.querySelector("#addInput"); if (a) ui.addDraft = a.value;
     var ap = document.querySelector("#addPlace"); if (ap) ui.addPlace = ap.value;
     var rn = document.querySelector("#roomName"); if (rn) ui.newRoomName = rn.value;
   }
 
+  /* 書き換えの前後で、入力中の行とカーソル位置を保つ */
+  function snapFocus() {
+    var a = document.activeElement;
+    if (!a || !a.getAttribute) return null;
+    var pk = a.getAttribute("data-pk");
+    if (!pk) return null;
+    var st = 0, en = 0;
+    try { st = a.selectionStart; en = a.selectionEnd; } catch (e) {}
+    return { pk: pk, s: st, e: en };
+  }
+  function restoreFocus(f) {
+    if (!f) return false;
+    /* data-pk には DB 由来の id が入る。セレクタへ連結すると壊れるので走査して探す */
+    var all = document.querySelectorAll("[data-pk]"), el = null;
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getAttribute("data-pk") === f.pk) { el = all[i]; break; }
+    }
+    if (!el) return false;
+    el.focus();
+    var st = f.s < 0 ? el.value.length : f.s, en = f.e < 0 ? el.value.length : f.e;
+    try { el.setSelectionRange(st, en); } catch (e) {}
+    return true;
+  }
+  function grow(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+  function growAll() {
+    var t = document.querySelectorAll("textarea.btxt"), i;
+    for (i = 0; i < t.length; i++) grow(t[i]);
+    /* 1回目で折り返しが変わることがあるので、描画が落ち着いてからもう一度測る */
+    if (window.requestAnimationFrame) requestAnimationFrame(function () {
+      var u = document.querySelectorAll("textarea.btxt");
+      for (var j = 0; j < u.length; j++) grow(u[j]);
+    });
+  }
+  var growTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(growTimer);
+    growTimer = setTimeout(growAll, 120);
+  });
+  function setHtml(h) {
+    rendering = true;
+    document.getElementById("app").innerHTML = h;
+    rendering = false;
+  }
+
   /* ---------- 描画 ---------- */
   function render() {
+    /* 変換中やドラッグ中に書き換えると入力が壊れるので、終わってから描く */
+    if (composing() || drag || held()) { pendingRender = true; return; }
+    pendingRender = false;
+    reconcile();
+
     if (!me) {
-      document.getElementById("app").innerHTML = gateHtml();
+      setHtml(gateHtml());
       var p = document.querySelector("#mail"); if (p) p.focus();
       return;
     }
+    captureDrafts();
 
     var ids = myRooms();
     if (ids.length && !rooms[ui.room]) ui.room = ids[0];
 
     var SEC = sections();
-    var b = board();
-    var unread = 0;
-    SEC.forEach(function (sc) {
-      if (sc.noSeen) return;   /* 「見た」を押せない欄は数えない（消せなくなるため） */
-      unread += (b[sc.key] || []).filter(function (x) {
-        return !x.done && !(x.seenBy && x.seenBy[me.uid]) && x.by !== me.uid;
-      }).length;
-    });
     var stale = field.cases.filter(function (c) { return !c.done && now() - c.updatedAt > 7 * DAY; });
     var cold = field.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
     var alerts = stale.length + cold.length;
@@ -369,15 +521,14 @@ var FIREBASE_CONFIG = {
 
     h += '<div class="rooms">';
     ids.forEach(function (rid) {
-      h += '<button data-act="room" data-id="' + rid + '" data-on="' + (ui.room === rid ? 1 : 0) + '">' +
+      h += '<button data-act="room" data-id="' + esc(rid) + '" data-on="' + (ui.room === rid ? 1 : 0) + '">' +
         esc(rooms[rid].name || "名前なし") + "</button>";
     });
     if (isCeo()) h += '<button class="plus" data-act="newroom">＋</button>';
     h += "</div>";
 
     h += '<div class="tabs">' +
-      '<button data-act="tab" data-v="board" data-on="' + (ui.tab === "board" ? 1 : 0) + '">共有ボード' +
-      (unread ? '<span class="badge">' + unread + "</span>" : "") + "</button>" +
+      '<button data-act="tab" data-v="board" data-on="' + (ui.tab === "board" ? 1 : 0) + '">共有ボード</button>' +
       '<button data-act="tab" data-v="field" data-on="' + (ui.tab === "field" ? 1 : 0) + '">現場マネジメント' +
       (alerts ? '<span class="badge">' + alerts + "</span>" : "") + "</button></div></div>";
 
@@ -392,14 +543,15 @@ var FIREBASE_CONFIG = {
 
     h += "</div>";
 
-    var act = document.activeElement;
-    var keepKey = act && act.getAttribute ? act.getAttribute("data-draft") : null;
-    if (keepKey) captureDrafts();
-    document.getElementById("app").innerHTML = h;
-    var f = null;
-    if (keepKey) f = document.querySelector('textarea[data-draft="' + keepKey + '"]');
-    if (!f) f = document.querySelector("#replyInput") || document.querySelector("#addInput");
-    if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e) {} }
+    var keep = snapFocus();
+    setHtml(h);
+    growAll();
+    var wantAdd = ui.focusAdd;
+    ui.focusAdd = false;                    /* 立てたら必ず1回で使い切る */
+    if (!restoreFocus(keep) && wantAdd) {
+      var f = document.querySelector("#addInput");
+      if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e) {} }
+    }
   }
 
   function newRoomHtml() {
@@ -410,7 +562,7 @@ var FIREBASE_CONFIG = {
       if (u === me.uid) return;
       var m = members[u] || {};
       if (m.active === false) return;
-      h += '<label class="chk"><input type="checkbox" data-pickuid="' + u + '"' +
+      h += '<label class="chk"><input type="checkbox" data-pickuid="' + esc(u) + '"' +
         (ui.newRoomPick[u] ? " checked" : "") + "><span>" + esc(m.name || m.mail || u) + "</span></label>";
     });
     return h + '<button class="btn" data-act="makeroom">作る</button>' +
@@ -420,7 +572,7 @@ var FIREBASE_CONFIG = {
   function settingsHtml() {
     var h = '<div class="panel"><h3>設定</h3>' +
       '<div class="field"><label>あなたの表示名</label>' +
-      '<input data-mname="' + me.uid + '" value="' + esc(me.name || "") + '" placeholder="谷口"></div>';
+      '<input data-mname="' + esc(me.uid) + '" value="' + esc(me.name || "") + '" placeholder="谷口"></div>';
 
     h += '<h3 style="margin-top:18px">部屋</h3>';
     myRooms().forEach(function (rid) {
@@ -429,8 +581,8 @@ var FIREBASE_CONFIG = {
         .map(nameOfUid).join("、");
       h += '<div class="pline"><span class="pname">' + esc(r.name || "名前なし") + "</span>" +
         '<span class="pnote">' + esc(who || "自分だけ") + "</span>" +
-        '<button data-act="editroom" data-id="' + rid + '">変える</button>' +
-        '<button data-act="delroom" data-id="' + rid + '">削除</button></div>';
+        '<button data-act="editroom" data-id="' + esc(rid) + '">変える</button>' +
+        '<button data-act="delroom" data-id="' + esc(rid) + '">削除</button></div>';
     });
 
     h += '<h3 style="margin-top:18px">利用者</h3>';
@@ -441,11 +593,11 @@ var FIREBASE_CONFIG = {
           '</span><span class="pnote">あなた</span></div>';
         return;
       }
-      h += '<div class="pline"><input value="' + esc(m.name || "") + '" data-mname="' + u +
+      h += '<div class="pline"><input value="' + esc(m.name || "") + '" data-mname="' + esc(u) +
         '" placeholder="表示名">' +
         '<span class="pnote" style="color:' + (m.active === false ? "var(--bad)" : "var(--ink3)") + '">' +
         (m.active === false ? "止めています" : "使えます") + "</span>" +
-        '<button data-act="member" data-id="' + u + '" style="font-weight:700;color:' +
+        '<button data-act="member" data-id="' + esc(u) + '" style="font-weight:700;color:' +
         (m.active === false ? "var(--ok)" : "var(--bad)") + '">' +
         (m.active === false ? "戻す" : "止める") + "</button></div>";
     });
@@ -463,67 +615,101 @@ var FIREBASE_CONFIG = {
     return h + '<div style="margin-top:16px"><button data-act="settings" style="background:none;border:0;font-size:12px;color:var(--ink3)">設定を閉じる</button></div></div>';
   }
 
-  function itemHtml(key, it, opts) {
-    var mine = me && it.by === me.uid;
-    /* 「見た」は自分の投稿を相手が読んだときだけ出す（自分が読んだ印は出さない） */
-    var seenByOther = it.seenBy ? Object.keys(it.seenBy).filter(function (u) {
-      return !me || u !== me.uid; }).length : 0;
-    var h = '<article class="item" data-id="' + it.id + '" data-list="' + key + '" data-done="' +
-      (it.done ? 1 : 0) + '">' +
-      '<button class="grip" data-grip title="つかんで動かす">⣿</button>' +
-      '<div class="ibody"><p class="text">' + esc(it.text) + "</p>" +
-      '<div class="meta"><span>' + esc(nameOfUid(it.by)) + "</span><span>" + ago(it.createdAt) + "</span>" +
-      (mine && seenByOther ? "<span>相手が見た</span>" : "") + "</div>";
-
-    if (!opts.noReply) (it.replies ? toArr(it.replies) : []).forEach(function (r) {
-      h += '<div class="reply"><div class="meta"><span style="font-weight:700">' +
-        esc(nameOfUid(r.by)) + "</span><span>" + ago(r.createdAt) + "</span></div><p>" + esc(r.text) + "</p></div>";
-    });
-
-    if (!opts.noReply && ui.replyOpen === it.id) {
-      h += '<div class="rin"><input id="replyInput" value="' + esc(ui.replyDraft) +
-        '" placeholder="コメントを書く"><button class="send plain" data-act="rsend" data-list="' +
-        key + '" data-id="' + it.id + '">送る</button></div>';
+  /* ノートの中の1ブロック。書ける人にはつまみ・本文・消すボタンを出す。 */
+  function blkHtml(key, it, canEdit, label) {
+    var pk = pkOf(key, it.id), txt = shownText(key, it);
+    if (!canEdit) {
+      /* 動かせないが、並べ替えの対応付けには id が要る */
+      return '<div class="blk" data-id="' + esc(it.id) + '" data-list="' + esc(key) + '">' +
+        '<span class="grip ghost" aria-hidden="true"></span>' +
+        '<p class="btxt">' + esc(txt) + "</p></div>";
     }
-
-    h += '</div><div class="side">';
-    if (!mine && !opts.noSeen && !(it.seenBy && it.seenBy[me.uid]))
-      h += '<button data-act="seen" data-list="' + key + '" data-id="' + it.id + '">見た</button>';
-    if (!mine && !opts.noReply)
-      h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
-    if (mine || opts.anyDelete)
-      h += '<button data-act="del" data-list="' + key + '" data-id="' + it.id + '">削除</button>';
-    return h + "</div></article>";
+    var ask = "";
+    if (ui.confirmDel === pk) {
+      var n = txt.split("\n").length;
+      ask = '<div class="ask"><span>' + (n > 1 ? "この" + n + "行" : "この行") + "を消しますか？</span>" +
+        '<button type="button" data-act="dodel" data-list="' + esc(key) + '" data-id="' + esc(it.id) +
+          '">消す</button>' +
+        '<button type="button" class="no" data-act="nodel">やめる</button></div>';
+    }
+    return '<div class="blk" data-id="' + esc(it.id) + '" data-list="' + esc(key) + '">' +
+      '<button class="grip" type="button" tabindex="-1" data-grip title="つかんで上下に動かす" ' +
+        'aria-label="順番を変える">⣿</button>' +
+      taHtml(pk, key, it.id, txt, "", label) +
+      '<button class="bx" type="button" data-act="askdel" data-list="' + esc(key) + '" data-id="' +
+        esc(it.id) + '" title="この行を消す" aria-label="この行を消す">×</button>' +
+      ask + "</div>";
   }
 
-  function compHtml(key, ph, label) {
-    return '<div class="comp"><textarea rows="2" data-draft="' + key + '" placeholder="' + ph + '">' +
-      esc(ui.draft[key] || "") + '</textarea><div class="comp-b">' +
-      '<button class="send" data-act="post" data-list="' + key + '">' + (label || "書く") + "</button></div></div>";
+  /* textarea は先頭の改行が食われるので1つ足しておく */
+  function taHtml(pk, key, id, txt, ph, label) {
+    return '<textarea class="btxt" rows="1" data-pk="' + esc(pk) + '" data-list="' + esc(key) +
+      '" data-id="' + esc(id) + '" placeholder="' + esc(ph) + '" aria-label="' + esc(label) + '">' +
+      (txt.charAt(0) === "\n" ? "\n" : "") + esc(txt) + "</textarea>";
+  }
+
+  /* 1項目＝1枚のノート。中身が増えてもカードは増やさない。
+     opt = { canAdd, canEdit(it), label, ph } */
+  function noteHtml(key, opt) {
+    var items = arrFor(key);
+    var h = '<div class="note" data-note="' + esc(key) + '">';
+    items.forEach(function (it) { h += blkHtml(key, it, opt.canEdit(it), opt.label); });
+    if (opt.canAdd) {
+      var nid = newId(key), pk = pkOf(key, nid);
+      h += '<div class="blk" data-new="1" data-id="' + esc(nid) + '" data-list="' + esc(key) + '">' +
+        '<span class="grip ghost" aria-hidden="true"></span>' +
+        taHtml(pk, key, nid, edit && edit.pk === pk ? edit.val : "",
+               items.length ? "ここに続けて入力…" : opt.ph, opt.label) + "</div>";
+    }
+    return h + "</div>";
+  }
+
+  /* 末尾の空欄が1行になった瞬間。画面ごと作り直すと入力が途切れるので、その場で作り替える。 */
+  function promoteRow(ta) {
+    var blk = ta.parentNode;
+    if (!blk || !blk.hasAttribute || !blk.hasAttribute("data-new")) return;
+    var box = blk.parentNode; if (!box) return;
+    var key = ta.getAttribute("data-list"), id = ta.getAttribute("data-id");
+    var label = ta.getAttribute("aria-label") || "";
+    blk.removeAttribute("data-new");
+    var g = document.createElement("button");
+    g.className = "grip"; g.type = "button"; g.tabIndex = -1;
+    g.setAttribute("data-grip", ""); g.title = "つかんで上下に動かす";
+    g.setAttribute("aria-label", "順番を変える"); g.textContent = "⣿";
+    blk.replaceChild(g, blk.querySelector(".grip"));
+    var x = document.createElement("button");
+    x.className = "bx"; x.type = "button";
+    x.setAttribute("data-act", "askdel");
+    x.setAttribute("data-list", key); x.setAttribute("data-id", id);
+    x.title = "この行を消す"; x.setAttribute("aria-label", "この行を消す");
+    x.textContent = "×";
+    blk.appendChild(x);
+    var nid = newId(key), wrap = document.createElement("div");
+    wrap.className = "blk";
+    wrap.setAttribute("data-new", "1");
+    wrap.setAttribute("data-id", nid);
+    wrap.setAttribute("data-list", key);
+    wrap.innerHTML = '<span class="grip ghost" aria-hidden="true"></span>' +
+      taHtml(pkOf(key, nid), key, nid, "", "ここに続けて入力…", label);
+    box.appendChild(wrap);
+    grow(wrap.querySelector("textarea"));
   }
 
   function boardHtml(SEC) {
-    var b = board();
     return SEC.map(function (s) {
-      var items = b[s.key] || [];
-      var open = items.filter(function (x) { return !x.done; });
-      var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
-        '<h2 class="sec-t">' + esc(s.title) + '</h2><span class="sec-n">' + open.length + "件</span></div>" +
-        (s.desc ? '<p class="sec-d">' + esc(s.desc) + "</p>" : "");
       /* voice が "ceo" の欄は社長が、"mgr" の欄は現場側が書く */
       var canWrite = (s.voice === "ceo") === isCeo();
-      h += canWrite ? compHtml(s.key, s.ph)
-                    : '<p class="empty">' + esc(s.locked) + "</p>";
-      if (items.length) {
-        h += '<div class="list">';
-        items.forEach(function (it) {
-          h += itemHtml(s.key, it, {
-            anyDelete: isCeo(), noReply: !!s.noReply, noSeen: !!s.noSeen
-          });
-        });
-        h += "</div>";
+      var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
+        '<h2 class="sec-t">' + esc(s.title) + "</h2></div>";
+      if (!canWrite) {
+        h += '<p class="sec-d">' + esc(s.locked) + "</p>";
+        if (!arrFor(s.key).length) return h + '<p class="empty">まだ何も書かれていません。</p></section>';
       }
-      return h + "</section>";
+      return h + noteHtml(s.key, {
+        canAdd: canWrite,
+        canEdit: function () { return canWrite; },
+        label: s.title, ph: s.ph
+      }) + "</section>";
     }).join("");
   }
 
@@ -538,16 +724,16 @@ var FIREBASE_CONFIG = {
 
     h += '<div class="pick"><select id="pickSel"><option value="">すべての施設</option>';
     field.facilities.forEach(function (f) {
-      h += '<option value="' + f.id + '"' + (ui.pick === f.id ? " selected" : "") + ">" + esc(f.name) + "</option>";
+      h += '<option value="' + esc(f.id) + '"' + (ui.pick === f.id ? " selected" : "") + ">" + esc(f.name) + "</option>";
     });
     h += '</select><button data-act="editlist">' + (ui.editList ? "リストを閉じる" : "施設リスト") + "</button></div>";
 
     if (ui.editList) {
       h += '<div class="panel"><h3>施設リスト</h3>';
       field.facilities.forEach(function (f) {
-        h += '<div class="pline"><input value="' + esc(f.name) + '" data-list="facilities" data-id="' + f.id +
+        h += '<div class="pline"><input value="' + esc(f.name) + '" data-list="facilities" data-id="' + esc(f.id) +
           '" data-field="name" placeholder="施設名">' +
-          '<button data-act="del" data-list="facilities" data-id="' + f.id + '">削除</button></div>';
+          '<button data-act="del" data-list="facilities" data-id="' + esc(f.id) + '">削除</button></div>';
       });
       h += addHtml("facilities", "施設を追加", "施設名") + "</div>";
     }
@@ -557,14 +743,19 @@ var FIREBASE_CONFIG = {
     shown.forEach(function (f) {
       var key = "fac:" + f.id;
       h += '<div class="fac"><div class="fac-h">' +
-        '<button class="dot" style="background:' + STATUS[f.status] + '" data-act="cycle" data-id="' + f.id + '"></button>' +
+        '<button class="dot" style="background:' +
+          (STATUS.hasOwnProperty(f.status) ? STATUS[f.status] : STATUS.green) +
+          '" data-act="cycle" data-id="' + esc(f.id) + '"></button>' +
         '<span class="fac-n">' + esc(f.name) + '</span><span class="fac-d">' + ago(f.updatedAt) + "</span></div>";
-      if ((f.items || []).length) {
-        h += '<div class="list">';
-        f.items.forEach(function (it) { h += itemHtml(key, it, { anyDelete: isCeo() }); });
-        h += "</div>";
+      /* 書き足しは全員できる。人が書いた行を直す・消せるのは本人と社長だけ（変更前と同じ）。 */
+      var canEditItem = function (it) { return isCeo() || (me && it.by === me.uid); };
+      if ((f.items || []).some(function (it) { return !canEditItem(it); })) {
+        h += '<p class="hint">自分が書いた行だけ直せます。</p>';
       }
-      h += compHtml(key, "この施設のことを書き足す", "足す") + "</div>";
+      h += noteHtml(key, {
+        canAdd: true, canEdit: canEditItem,
+        label: f.name, ph: "この施設のことを書き足す"
+      }) + "</div>";
     });
 
     var match = function (x) { return !ui.pick || x.place === ui.pick; };
@@ -579,11 +770,11 @@ var FIREBASE_CONFIG = {
         (st ? '<span class="flag">止まっている</span>' : "") +
         '<span class="row-d">' + ago(c.updatedAt) + "</span></div>" +
         (c.place ? '<div class="tag">' + esc(facName(c.place)) + "</div>" : "") +
-        '<input class="inline" data-list="cases" data-id="' + c.id + '" data-field="next" value="' +
+        '<input class="inline" data-list="cases" data-id="' + esc(c.id) + '" data-field="next" value="' +
         esc(c.next) + '" placeholder="次にすること">' +
-        '<div class="acts"><button data-act="bump" data-id="' + c.id + '">動いた</button>' +
-        '<button data-act="finish" data-id="' + c.id + '">完了</button>' +
-        '<button class="del" data-act="del" data-list="cases" data-id="' + c.id + '">削除</button></div></div>';
+        '<div class="acts"><button data-act="bump" data-id="' + esc(c.id) + '">動いた</button>' +
+        '<button data-act="finish" data-id="' + esc(c.id) + '">完了</button>' +
+        '<button class="del" data-act="del" data-list="cases" data-id="' + esc(c.id) + '">削除</button></div></div>';
     });
     h += addHtml("cases", "案件を追加", "案件名");
     if (done.length) h += '<p class="empty">完了した案件 ' + done.length +
@@ -600,10 +791,10 @@ var FIREBASE_CONFIG = {
         (isCold ? '<span class="flag">フォロー切れ</span>' : "") +
         '<span class="row-d">' + ago(p.followedAt) + "</span></div>" +
         (p.place ? '<div class="tag">' + esc(facName(p.place)) + "</div>" : "") +
-        '<input class="inline" data-list="staff" data-id="' + p.id + '" data-field="concern" value="' +
+        '<input class="inline" data-list="staff" data-id="' + esc(p.id) + '" data-field="concern" value="' +
         esc(p.concern) + '" placeholder="気になっていること">' +
-        '<div class="acts"><button data-act="talked" data-id="' + p.id + '">話した</button>' +
-        '<button class="del" data-act="del" data-list="staff" data-id="' + p.id + '">削除</button></div></div>';
+        '<div class="acts"><button data-act="talked" data-id="' + esc(p.id) + '">話した</button>' +
+        '<button class="del" data-act="del" data-list="staff" data-id="' + esc(p.id) + '">削除</button></div></div>';
     });
     return h + addHtml("staff", "スタッフを追加", "スタッフ名") + "</section>";
   }
@@ -616,7 +807,7 @@ var FIREBASE_CONFIG = {
         '<option value="">施設なし</option>';
       field.facilities.forEach(function (f) {
         var sel = (ui.addPlace || ui.pick) === f.id ? " selected" : "";
-        h += '<option value="' + f.id + '"' + sel + ">" + esc(f.name) + "</option>";
+        h += '<option value="' + esc(f.id) + '"' + sel + ">" + esc(f.name) + "</option>";
       });
       h += "</select>";
     }
@@ -652,11 +843,28 @@ var FIREBASE_CONFIG = {
     }
 
     captureDrafts();
+    commitEdit();
+    if (act !== "askdel" && act !== "dodel" && act !== "nodel") ui.confirmDel = "";
     ui.msg = "";
 
-    if (act === "logout") { auth.signOut(); return; }
+    if (act === "logout") {
+      /* 書きかけを出しきってからログアウトする（権限が切れて保存が落ちないように）。
+         回線が悪いと保存の返事が来ないので、待つのは 1.5 秒まで。
+         送りそこねた分は Firebase 側が再接続時に送り直す。 */
+      ui.saving = "ログアウトしています";
+      paintStatus();
+      var out = function () { auth.signOut(); };
+      Promise.race([
+        flushSaves(),
+        new Promise(function (r) { setTimeout(r, 1500); })
+      ]).then(out, out);
+      return;
+    }
     else if (act === "tab") ui.tab = v;
-    else if (act === "room") { ui.room = id; ui.replyOpen = null; }
+    else if (act === "room") {
+      flushSaves();                       /* 前の部屋の保存を先に出しきる */
+      ui.room = id; ui.confirmDel = ""; edit = null; ui.newId = {}; ui.fresh = {};
+    }
     else if (act === "settings") ui.settings = !ui.settings;
     else if (act === "invite") ui.invite = !ui.invite;
     else if (act === "newroom") { ui.newRoom = !ui.newRoom; ui.newRoomName = ""; ui.newRoomPick = {}; }
@@ -720,24 +928,17 @@ var FIREBASE_CONFIG = {
         });
       return;
     }
-    else if (act === "post") {
-      var t = (ui.draft[list] || "").trim(); if (!t) return;
-      arrFor(list).unshift({ id: uid(), text: t, by: me.uid, createdAt: now(), done: false, seenBy: {}, replies: [] });
-      if (list.indexOf("fac:") === 0) { var f0 = fac(list.slice(4)); if (f0) f0.updatedAt = now(); }
-      ui.draft[list] = ""; saveFor(list);
+    else if (act === "askdel") {
+      var pk = pkOf(list, id);
+      ui.confirmDel = ui.confirmDel === pk ? "" : pk;
     }
-    else if (act === "seen") {
-      it = find(list, id);
-      if (it) { it.seenBy = it.seenBy || {}; it.seenBy[me.uid] = true; saveFor(list); }
-    }
-    else if (act === "reply") { ui.replyOpen = ui.replyOpen === id ? null : id; ui.replyDraft = ""; }
-    else if (act === "rsend") {
-      var rv = (ui.replyDraft || "").trim(); if (!rv) return;
-      it = find(list, id); if (!it) return;
-      it.replies = toArr(it.replies);
-      it.replies.push({ id: uid(), text: rv, by: me.uid, createdAt: now() });
-      it.seenBy = it.seenBy || {}; it.seenBy[me.uid] = true;
-      ui.replyOpen = null; ui.replyDraft = ""; saveFor(list);
+    else if (act === "nodel") { ui.confirmDel = ""; }
+    else if (act === "dodel") {
+      ui.confirmDel = "";
+      setArr(list, arrFor(list).filter(function (x) { return x.id !== id; }));
+      if (edit && edit.pk === pkOf(list, id)) edit = null;
+      delete ui.fresh[pkOf(list, id)];
+      saveFor(list, 0);
     }
     else if (act === "del") {
       var target = find(list, id);
@@ -748,20 +949,28 @@ var FIREBASE_CONFIG = {
       if (list === "facilities" && ui.pick === id) ui.pick = "";
       saveFor(list);
     }
-    else if (act === "cycle") { it = fac(id); it.status = NEXT[it.status]; it.updatedAt = now(); saveField(); }
-    else if (act === "bump") { it = find("cases", id); it.updatedAt = now(); saveField(); }
-    else if (act === "finish") { it = find("cases", id); it.done = true; it.updatedAt = now(); saveField(); }
-    else if (act === "talked") { it = find("staff", id); it.followedAt = now(); saveField(); }
-    else if (act === "clearDone") { field.cases = field.cases.filter(function (c) { return !c.done; }); saveField(); }
+    else if (act === "cycle") {
+      it = fac(id); if (!it) return;
+      it.status = NEXT[it.status] || "green"; it.updatedAt = now(); saveField("facilities");
+    }
+    else if (act === "bump") { it = find("cases", id); if (!it) return; it.updatedAt = now(); saveField("cases"); }
+    else if (act === "finish") { it = find("cases", id); if (!it) return; it.done = true; it.updatedAt = now(); saveField("cases"); }
+    else if (act === "talked") { it = find("staff", id); if (!it) return; it.followedAt = now(); saveField("staff"); }
+    else if (act === "clearDone") {
+      var doneN = field.cases.filter(function (c) { return c.done; }).length;
+      if (!confirm("完了した案件 " + doneN + "件をまとめて消します。元に戻せません。よろしいですか？")) return;
+      field.cases = field.cases.filter(function (c) { return !c.done; });
+      saveField("cases");
+    }
     else if (act === "editlist") ui.editList = !ui.editList;
-    else if (act === "addopen") { ui.addOpen = list; ui.addDraft = ""; ui.addPlace = ui.pick || ""; }
+    else if (act === "addopen") { ui.addOpen = list; ui.addDraft = ""; ui.addPlace = ui.pick || ""; ui.focusAdd = true; }
     else if (act === "addsend") {
       var av = (ui.addDraft || "").trim(); if (!av) return;
       if (list === "facilities") field.facilities.push({ id: uid(), name: av, status: "green", items: [], updatedAt: now() });
       if (list === "cases") field.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "", next: "",
         createdAt: now(), updatedAt: now(), done: false });
       if (list === "staff") field.staff.push({ id: uid(), name: av, place: ui.addPlace || "", concern: "", followedAt: now() });
-      ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; saveField();
+      ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; saveField(list);
     }
     render();
   });
@@ -808,6 +1017,40 @@ var FIREBASE_CONFIG = {
     if (i.getAttribute("data-field") === "name") render();
   });
 
+  /* ---------- ノートの直接編集（自動保存） ---------- */
+  function isBlk(t) {
+    return t && t.classList && t.classList.contains("btxt") && t.tagName === "TEXTAREA";
+  }
+  var promoteWait = null;
+  function typed(t) {
+    grow(t);
+    if (applyEdit(t.getAttribute("data-list"), t.getAttribute("data-id"), t.value)) promoteWait = t;
+    /* 変換中に行を組み替えると入力が壊れうるので、確定してから作り替える */
+    if (promoteWait && !composing()) { var p = promoteWait; promoteWait = null; promoteRow(p); }
+  }
+  document.addEventListener("input", function (e) {
+    if (isBlk(e.target)) typed(e.target);
+  });
+  document.addEventListener("compositionstart", function () { composeAt = Date.now(); });
+  document.addEventListener("compositionupdate", function () { composeAt = Date.now(); });
+  document.addEventListener("compositionend", function (e) {
+    composeAt = 0;
+    if (isBlk(e.target)) typed(e.target);
+    if (pendingRender) render();
+  });
+  /* ここでは画面を作り直さない。
+     作り直すと、押されたボタンが差し替わってクリックが取りこぼされる。 */
+  document.addEventListener("focusout", function (e) {
+    if (rendering || drag) return;
+    var t = e.target;
+    if (!isBlk(t)) return;
+    composeAt = 0;                         /* 変換中に離れた場合の取りこぼし対策 */
+    if (commitEdit()) {
+      var blk = t.parentNode;              /* 空のまま終わった行だけ、その場で取り除く */
+      if (blk && blk.parentNode) blk.parentNode.removeChild(blk);
+    }
+  });
+
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Enter") return;
     if (e.target.id === "mail" || e.target.id === "pw") {
@@ -815,57 +1058,103 @@ var FIREBASE_CONFIG = {
       var ub = document.querySelector('button[data-act="login"]'); if (ub) ub.click();
       return;
     }
-    if (e.target.id === "replyInput" || e.target.id === "addInput") {
+    if (e.target.id === "addInput") {
       e.preventDefault();
       captureDrafts();
-      var btn = e.target.parentNode.querySelector('button[data-act="rsend"], button[data-act="addsend"]');
+      var btn = e.target.parentNode.querySelector('button[data-act="addsend"]');
       if (btn) btn.click();
     }
   });
 
   /* ドラッグで並べ替え */
-  var drag = null;
+  var drag = null, dragFrom = null;
+  function rowIds(box) {
+    return Array.prototype.slice.call(box.children)
+      .filter(function (el) { return !el.hasAttribute("data-new"); })
+      .map(function (el) { return el.getAttribute("data-id"); });
+  }
   document.addEventListener("pointerdown", function (e) {
     var g = e.target.closest ? e.target.closest("[data-grip]") : null;
     if (!g) return;
-    var item = g.closest(".item"); if (!item) return;
+    var item = g.closest(".blk"); if (!item) return;
     e.preventDefault();
-    captureDrafts();
-    drag = { item: item, box: item.parentNode, list: item.getAttribute("data-list") };
-    item.classList.add("dragging");
-    document.body.style.userSelect = "none";
-    try { g.setPointerCapture(e.pointerId); } catch (err) {}
+    /* つまんだだけ・触れただけでは動かさない。少し動かして初めて並べ替えを始める。 */
+    dragFrom = { g: g, item: item, x: e.clientX, y: e.clientY, id: e.pointerId };
   });
+  function startDrag() {
+    var d = dragFrom; dragFrom = null;
+    captureDrafts();
+    drag = { item: d.item, box: d.item.parentNode,
+             list: d.item.getAttribute("data-list"),
+             was: rowIds(d.item.parentNode).join("\u0001") };
+    d.item.classList.add("dragging");
+    document.body.style.userSelect = "none";
+    try { d.g.setPointerCapture(d.id); } catch (err) {}
+  }
   document.addEventListener("pointermove", function (e) {
+    if (dragFrom) {
+      /* 離したことを取りこぼしていたら、つかみかけを捨てる */
+      if (e.buttons === 0 && e.pointerType === "mouse") { dragFrom = null; return; }
+      if (Math.abs(e.clientY - dragFrom.y) < 8 && Math.abs(e.clientX - dragFrom.x) < 8) return;
+      startDrag();
+    }
     if (!drag) return;
     e.preventDefault();
     var kids = Array.prototype.slice.call(drag.box.children);
+    var tail = drag.box.querySelector("[data-new]");
     for (var i = 0; i < kids.length; i++) {
       var el = kids[i];
-      if (el === drag.item) continue;
+      if (el === drag.item || el === tail) continue;
       var r = el.getBoundingClientRect();
       if (e.clientY < r.top + r.height / 2) {
         if (el.previousSibling !== drag.item) drag.box.insertBefore(drag.item, el);
         return;
       }
     }
-    if (drag.box.lastChild !== drag.item) drag.box.appendChild(drag.item);
+    /* 末尾の入力欄より下へは置かない */
+    if (tail) { if (tail.previousSibling !== drag.item) drag.box.insertBefore(drag.item, tail); }
+    else if (drag.box.lastChild !== drag.item) drag.box.appendChild(drag.item);
   });
   function endDrag() {
+    if (dragFrom) { dragFrom = null; return; }   /* 動かさずに離した＝並べ替えではない */
     if (!drag) return;
-    var ids = Array.prototype.slice.call(drag.box.children).map(function (el) { return el.getAttribute("data-id"); });
-    var arr = arrFor(drag.list);
-    setArr(drag.list, ids.map(function (id) {
-      return arr.filter(function (x) { return x.id === id; })[0];
-    }).filter(Boolean));
-    var k = drag.list;
+    var k = drag.list, was = drag.was, ids = rowIds(drag.box);
     drag.item.classList.remove("dragging");
     drag = null;
     document.body.style.userSelect = "";
-    saveFor(k); render();
+    var arr = arrFor(k), seen = {}, ok = ids.length === arr.length;
+    ids.forEach(function (id) { if (seen[id]) ok = false; seen[id] = 1; });
+    if (ok) {
+      var next = ids.map(function (id) {
+        return arr.filter(function (x) { return x.id === id; })[0];
+      });
+      /* 画面と中身の対応が取れたときだけ確定する（並べ替えで行を失わない） */
+      if (next.indexOf(undefined) < 0 && ids.join("\u0001") !== was) {
+        setArr(k, next);
+        saveFor(k, 0);
+      }
+    }
+    render();
   }
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
+  /* タブを閉じる・背面へ回すときは、書きかけを出しきる */
+  window.addEventListener("pagehide", function () { flushSaves(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) flushSaves();
+  });
+  document.addEventListener("pointerdown", function () { heldAt = Date.now(); }, true);
+  function released() {
+    heldAt = 0;
+    if (pendingRender) setTimeout(render, 0);   /* click を先に通してから描き直す */
+  }
+  /* pointerup を取りこぼしても、待たせた描き直しが残らないようにする */
+  setInterval(function () {
+    if (!me) { pendingRender = false; return; }
+    if (pendingRender && !held() && !drag && !composing()) render();
+  }, 1000);
+  document.addEventListener("pointerup", released, true);
+  document.addEventListener("pointercancel", released, true);
 
   /* ---------- 起動 ---------- */
   function watchRoom(rid) {
@@ -873,10 +1162,14 @@ var FIREBASE_CONFIG = {
     roomRefs[rid] = rtdb.ref("rooms/" + rid);
     roomRefs[rid].on("value", function (s) {
       var v = s.val();
-      if (!v) { delete rooms[rid]; }
-      else { v.board = normBoard(v.board); rooms[rid] = v; }
+      if (!v) { if (!rooms[rid]) return; delete rooms[rid]; }
+      else {
+        v.board = normBoard(v.board);
+        if (same(v, rooms[rid])) return;
+        rooms[rid] = v;
+      }
       render();
-    }, function () { delete rooms[rid]; render(); });
+    }, function () { if (!rooms[rid]) return; delete rooms[rid]; render(); });
   }
   function unwatchAll() {
     Object.keys(roomRefs).forEach(function (rid) { roomRefs[rid].off(); delete roomRefs[rid]; });
@@ -904,6 +1197,7 @@ var FIREBASE_CONFIG = {
         rtdb.ref("rooms").on("value", function (s) {
           var v = s.val() || {};
           Object.keys(v).forEach(function (rid) { v[rid].board = normBoard(v[rid].board); });
+          if (same(v, rooms)) return;
           rooms = v; render();
         });
         rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); });
@@ -912,7 +1206,11 @@ var FIREBASE_CONFIG = {
       }
 
       rtdb.ref("config").on("value", function (s) { conf = s.val() || { ceoName: "谷口" }; render(); });
-      rtdb.ref("field").on("value", function (s) { field = normField(s.val()); render(); });
+      rtdb.ref("field").on("value", function (s) {
+        var v = normField(s.val());
+        if (same(v, field)) return;
+        field = v; render();
+      });
       render();
     }, function () {
       me = null; ui.gateErr = "このアカウントは今このボードを見られません。";
