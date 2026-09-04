@@ -47,12 +47,17 @@
       ".read": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo' && root.child('members').child(auth.uid).child('active').val() === true",
       "$rid": {
         ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || data.child('members').child(auth.uid).val() === true)",
-        ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || data.child('members').child(auth.uid).val() === true)",
-        "members": {
-          ".write": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo'"
-        },
+        ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
         "name": {
-          ".write": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo'"
+          ".validate": "newData.isString()"
+        },
+        "members": {
+          "$uid": {
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "board": {
+          ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || root.child('rooms').child($rid).child('members').child(auth.uid).val() === true)"
         }
       }
     }
