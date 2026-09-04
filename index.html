@@ -33,6 +33,13 @@
   .whoami { display:flex; align-items:center; gap:10px; margin-top:8px; font-size:12px; color:var(--ink2); }
   .whoami .tagme { font-weight:700; color:#fff; padding:3px 9px; border-radius:3px; font-size:12px; }
   .whoami button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; }
+
+  .rooms { display:flex; gap:6px; margin-top:12px; overflow-x:auto; padding-bottom:2px; }
+  .rooms button { flex:none; padding:7px 13px; font-size:13px; font-weight:600; border:1px solid var(--line);
+    border-radius:20px; background:transparent; color:var(--ink2); display:flex; align-items:center; gap:6px; }
+  .rooms button[data-on="1"] { background:var(--ink); border-color:var(--ink); color:#fff; }
+  .rooms .plus { font-weight:400; color:var(--ink3); }
+
   .tabs { display:flex; margin-top:14px; border-bottom:1px solid var(--line); }
   .tabs button { flex:1; padding:11px 0 9px; background:none; border:0; border-bottom:2px solid transparent;
     font-size:14px; font-weight:600; color:var(--ink3); margin-bottom:-1px;
@@ -98,20 +105,23 @@
   .panel { margin-top:10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); padding:12px; }
   .panel h3 { margin:0 0 4px; font-size:13px; font-weight:700; }
   .panel p { margin:0 0 8px; font-size:12px; color:var(--ink2); line-height:1.7; }
-  .pline { display:flex; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--line); }
+  .pline { display:flex; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
   .pline:first-of-type { border-top:0; }
-  .pline input { flex:1; border:0; border-bottom:1px dashed var(--line); background:transparent;
-    font-family:inherit; font-size:14px; padding:3px 0; color:var(--ink); }
+  .pline input[type="text"], .pline input:not([type]) { flex:1; border:0; border-bottom:1px dashed var(--line);
+    background:transparent; font-family:inherit; font-size:14px; padding:3px 0; color:var(--ink); }
   .pline input:focus { outline:none; border-bottom-color:var(--ink); }
   .pline button { background:none; border:0; font-size:12px; color:var(--ink3); }
+  .pname { flex:1; font-size:14px; }
+  .pnote { font-size:11px; color:var(--ink3); }
+  .chk { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:14px; }
+  .chk input { width:18px; height:18px; }
   .field { margin-top:12px; }
   .field label { display:block; font-size:12px; font-weight:700; margin-bottom:4px; }
   .field input { width:100%; padding:9px; font-size:14px; font-family:inherit; border:1px solid var(--line);
     border-radius:3px; background:var(--paper); color:var(--ink); }
-  .switch { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
-  .switch button { padding:7px 12px; font-size:13px; font-weight:600; border-radius:3px; border:1px solid var(--line);
-    background:transparent; color:var(--ink2); }
-  .switch button[data-on="1"] { background:var(--bad); border-color:var(--bad); color:#fff; }
+  .btn { margin-top:10px; padding:9px 14px; font-size:13px; font-weight:600; border:0; border-radius:3px;
+    background:var(--ink); color:#fff; }
+  .btn.ghost { background:transparent; color:var(--ink2); border:1px solid var(--line); }
 
   .fac { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:12px; overflow:hidden; }
   .fac-h { display:flex; align-items:center; gap:10px; padding:11px 12px; border-bottom:1px solid var(--line); }
@@ -148,7 +158,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
-/* ▼▼ Firebaseコンソールの「ウェブアプリ」からコピーした値をここに貼る ▼▼ */
+/* ▼▼ Firebaseコンソールの値 ▼▼ */
 var FIREBASE_CONFIG = {
   apiKey: "AIzaSyDkYQ5d8mskHo94WIysaFYP8VT2bIZ9Vtc",
   authDomain: "honomi-timecard.firebaseapp.com",
@@ -163,69 +173,63 @@ var FIREBASE_CONFIG = {
 (function () {
   firebase.initializeApp(FIREBASE_CONFIG);
   var auth = firebase.auth(), rtdb = firebase.database();
-  var me = null, members = {}, saveTimer = null;
   var DAY = 86400000;
   var STATUS = { green: "var(--ok)", yellow: "var(--warn)", red: "var(--bad)" };
   var NEXT = { green: "yellow", yellow: "red", red: "green" };
-  var COLOR = { ceo: "var(--ceo)", mgr: "var(--mgr)" };
-  var EMPTY = {
-    config: { ceoName: "谷口", mgrName: "谷村" },
-    ceoMind: [], toCeo: [], mgrAsk: [], toManager: [], facilities: [], staff: [], cases: []
-  };
+  var EMPTY_BOARD = { ceoMind: [], toCeo: [], mgrAsk: [], toManager: [] };
+  var EMPTY_FIELD = { facilities: [], staff: [], cases: [] };
 
-  var db = JSON.parse(JSON.stringify(EMPTY));
-  var ui = { role: null, tab: "board", saving: "", draft: {}, replyOpen: null, replyDraft: "",
+  var me = null;                 /* {uid, role, name, mail} */
+  var conf = { ceoName: "谷口" };
+  var members = {};              /* uid -> {name, mail, role, active} */
+  var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
+  var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
+  var roomRefs = {}, saveTimers = {};
+
+  var ui = { tab: "board", room: "", saving: "", draft: {}, replyOpen: null, replyDraft: "",
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
-             settings: false, gateErr: "" };
+             settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
+             invite: false, gateErr: "", msg: "" };
 
-  function cfg() { return db.config; }
-  function nameOf(r) { return r === "ceo" ? cfg().ceoName : cfg().mgrName; }
+  var isCeo = function () { return me && me.role === "ceo"; };
+  function nameOfUid(u) {
+    if (me && u === me.uid) return me.name || "自分";
+    var m = members[u];
+    return (m && m.name) || "だれか";
+  }
+  function room() { return rooms[ui.room] || null; }
+  function board() {
+    var r = room(); if (!r) return EMPTY_BOARD;
+    if (!r.board) r.board = JSON.parse(JSON.stringify(EMPTY_BOARD));
+    return r.board;
+  }
+  function myRooms() {
+    return Object.keys(rooms).sort(function (a, b) {
+      return (rooms[a].name || "").localeCompare(rooms[b].name || "");
+    });
+  }
 
   function sections() {
-    var a = cfg().ceoName, b = cfg().mgrName;
+    var a = conf.ceoName || "社長";
     return [
       { key: "ceoMind", voice: "ceo", title: a + "ビジョン",
         desc: "今考えていること、気になっていること、会社として進めたいこと。",
         locked: a + "さんが書く場所です。読んで、気になったらコメントしてください。",
-        ph: "いま頭にあることを、まとまっていなくても書く", writer: "ceo", marker: "mgr" },
-      { key: "toCeo", voice: "mgr", title: b + "レポート",
+        ph: "いま頭にあることを、まとまっていなくても書く", ceoOnly: true },
+      { key: "toCeo", voice: "mgr", title: "現場からの報告",
         desc: "現場で見えたこと、起きていること、気づいたこと。",
-        locked: b + "さんが書く場所です。目を通したら「見た」を押してください。",
-        ph: "現場で見えたこと、気づいたことを書く", writer: "mgr", marker: "ceo" },
+        locked: "", ph: "現場で見えたこと、気づいたことを書く", ceoOnly: false },
       { key: "mgrAsk", voice: "mgr", title: a + "への相談",
         desc: "迷っていること、判断を仰ぎたいこと、こうしたらどうかという案。",
-        locked: b + "さんが書く場所です。目を通したら「見た」を押してください。",
-        ph: "相談したいこと・提案を書く", writer: "mgr", marker: "ceo" },
+        locked: "", ph: "相談したいこと・提案を書く", ceoOnly: false },
       { key: "toManager", voice: "ceo", title: a + "からの指針",
         desc: "どう考えているか、何を決めたか、先に伝えておきたいこと。",
         locked: a + "さんが書く場所です。目を通したら「見た」を押してください。",
-        ph: "考え方・判断・伝えておきたいことを書く", writer: "ceo", marker: "mgr" }
+        ph: "考え方・判断・伝えておきたいことを書く", ceoOnly: true }
     ];
   }
 
-  function normalize(d) {
-    d = Object.assign({}, JSON.parse(JSON.stringify(EMPTY)), d || {});
-    d.config = Object.assign({}, EMPTY.config, d.config || {});
-    ["ceoMind", "toCeo", "mgrAsk", "toManager", "facilities", "staff", "cases"].forEach(function (k) {
-      if (!Array.isArray(d[k])) d[k] = d[k] ? Object.keys(d[k]).map(function (i) { return d[k][i]; }) : [];
-    });
-    d.facilities.forEach(function (f) { if (!Array.isArray(f.items)) f.items = f.items ? Object.keys(f.items).map(function (i) { return f.items[i]; }) : []; });
-    return d;
-  }
-
-  function save() {
-    ui.saving = "保存中";
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      rtdb.ref("board").set(JSON.parse(JSON.stringify(db)))
-        .then(function () { ui.saving = "保存済み"; paintStatus(); })
-        .catch(function (e) { ui.saving = "保存できません（" + e.code + "）"; paintStatus(); });
-    }, 400);
-    paintStatus();
-  }
-  function paintStatus() {
-    var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || "";
-  }
+  /* ---------- 小道具 ---------- */
   function uid() { return Math.random().toString(36).slice(2, 9) + Date.now().toString(36); }
   function now() { return Date.now(); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -236,20 +240,59 @@ var FIREBASE_CONFIG = {
     if (d <= 0) return "今日"; if (d === 1) return "昨日";
     if (d < 31) return d + "日前"; return Math.floor(d / 30) + "か月前";
   }
-  function fac(id) { return db.facilities.filter(function (f) { return f.id === id; })[0]; }
+  function toArr(v) { return Array.isArray(v) ? v : (v ? Object.keys(v).map(function (k) { return v[k]; }) : []); }
+  function normBoard(b) {
+    b = b || {};
+    var o = {};
+    ["ceoMind", "toCeo", "mgrAsk", "toManager"].forEach(function (k) { o[k] = toArr(b[k]); });
+    return o;
+  }
+  function normField(f) {
+    f = f || {};
+    var o = { facilities: toArr(f.facilities), staff: toArr(f.staff), cases: toArr(f.cases) };
+    o.facilities.forEach(function (x) { x.items = toArr(x.items); });
+    return o;
+  }
+
+  function saveBoard() {
+    var rid = ui.room; if (!rid) return;
+    queue("room:" + rid, function () {
+      return rtdb.ref("rooms/" + rid + "/board").set(JSON.parse(JSON.stringify(board())));
+    });
+  }
+  function saveField() {
+    queue("field", function () { return rtdb.ref("field").set(JSON.parse(JSON.stringify(field))); });
+  }
+  function queue(k, fn) {
+    ui.saving = "保存中";
+    paintStatus();
+    clearTimeout(saveTimers[k]);
+    saveTimers[k] = setTimeout(function () {
+      fn().then(function () { ui.saving = "保存済み"; paintStatus(); })
+          .catch(function (e) { ui.saving = "保存できません（" + e.code + "）"; paintStatus(); });
+    }, 400);
+  }
+  function paintStatus() { var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || ""; }
+
+  function fac(id) { return field.facilities.filter(function (f) { return f.id === id; })[0]; }
   function facName(id) { var f = fac(id); return f ? f.name : ""; }
   function arrFor(key) {
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (!f) return []; if (!f.items) f.items = []; return f.items; }
-    return db[key];
+    if (key === "facilities" || key === "staff" || key === "cases") return field[key];
+    return board()[key] || [];
   }
   function setArr(key, v) {
-    if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.items = v; }
-    else db[key] = v;
+    if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.items = v; return; }
+    if (key === "facilities" || key === "staff" || key === "cases") { field[key] = v; return; }
+    board()[key] = v;
   }
+  function isFieldKey(k) {
+    return k.indexOf("fac:") === 0 || k === "facilities" || k === "staff" || k === "cases";
+  }
+  function saveFor(key) { if (isFieldKey(key)) saveField(); else saveBoard(); }
   function find(key, id) { return arrFor(key).filter(function (x) { return x.id === id; })[0]; }
 
-  /* ---------- 入口（ログイン） ---------- */
-
+  /* ---------- 入口 ---------- */
   function gateHtml() {
     return '<div class="gate"><h1>穂乃味ボード</h1>' +
       "<p>メールアドレスとパスワードを入れてください。</p>" +
@@ -266,101 +309,150 @@ var FIREBASE_CONFIG = {
     var r = document.querySelector("#replyInput"); if (r) ui.replyDraft = r.value;
     var a = document.querySelector("#addInput"); if (a) ui.addDraft = a.value;
     var ap = document.querySelector("#addPlace"); if (ap) ui.addPlace = ap.value;
+    var rn = document.querySelector("#roomName"); if (rn) ui.newRoomName = rn.value;
   }
 
   /* ---------- 描画 ---------- */
-
   function render() {
-    if (!ui.role) {
+    if (!me) {
       document.getElementById("app").innerHTML = gateHtml();
-      var p = document.querySelector("#pin"); if (p) p.focus();
+      var p = document.querySelector("#mail"); if (p) p.focus();
       return;
     }
 
+    var ids = myRooms();
+    if (ids.length && !rooms[ui.room]) ui.room = ids[0];
+
     var SEC = sections();
+    var b = board();
     var unread = 0;
     SEC.forEach(function (sc) {
-      if (sc.marker !== ui.role) return;
-      unread += db[sc.key].filter(function (x) { return !x.seen && !x.done; }).length;
+      unread += (b[sc.key] || []).filter(function (x) {
+        return !x.done && !(x.seenBy && x.seenBy[me.uid]) && x.by !== me.uid;
+      }).length;
     });
-    var stale = db.cases.filter(function (c) { return !c.done && now() - c.updatedAt > 7 * DAY; });
-    var cold = db.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
+    var stale = field.cases.filter(function (c) { return !c.done && now() - c.updatedAt > 7 * DAY; });
+    var cold = field.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
     var alerts = stale.length + cold.length;
 
     var h = '<div class="top"><div class="brand"><h1 class="name">穂乃味ボード</h1>' +
       '<span class="sub" id="status">' + esc(ui.saving || "") + "</span></div>" +
-      '<div class="whoami"><span class="tagme" style="background:' + COLOR[ui.role] + '">' +
-      esc(nameOf(ui.role)) + "</span>" +
-      (ui.role === "ceo" ? '<button data-act="settings">設定</button>' : "") +
-      '<button data-act="logout">ログアウト</button></div>' +
-      '<div class="tabs">' +
+      '<div class="whoami"><span class="tagme" style="background:' +
+      (isCeo() ? "var(--ceo)" : "var(--mgr)") + '">' + esc(me.name || me.mail) + "</span>" +
+      (isCeo() ? '<button data-act="settings">設定</button>' : "") +
+      '<button data-act="logout">ログアウト</button></div>';
+
+    h += '<div class="rooms">';
+    ids.forEach(function (rid) {
+      h += '<button data-act="room" data-id="' + rid + '" data-on="' + (ui.room === rid ? 1 : 0) + '">' +
+        esc(rooms[rid].name || "名前なし") + "</button>";
+    });
+    if (isCeo()) h += '<button class="plus" data-act="newroom">＋</button>';
+    h += "</div>";
+
+    h += '<div class="tabs">' +
       '<button data-act="tab" data-v="board" data-on="' + (ui.tab === "board" ? 1 : 0) + '">共有ボード' +
       (unread ? '<span class="badge">' + unread + "</span>" : "") + "</button>" +
       '<button data-act="tab" data-v="field" data-on="' + (ui.tab === "field" ? 1 : 0) + '">現場マネジメント' +
       (alerts ? '<span class="badge">' + alerts + "</span>" : "") + "</button></div></div>";
 
     h += '<div class="body">';
-    if (ui.role === "ceo" && !Object.keys(members).length)
-      h += '<div class="notice">利用者がまだ登録されていません。設定を開いて確認してください。</div>';
-    if (ui.settings && ui.role === "ceo") h += settingsHtml();
-    h += (ui.tab === "board" ? boardHtml(SEC) : fieldHtml(stale, cold)) +
-      '<div class="foot"><span class="sub">2人で同じ内容を見ています</span>' +
-      (ui.role === "ceo" ? '<button data-act="reset">全部消す</button>' : "") + "</div></div>";
+    if (ui.msg) h += '<div class="notice">' + esc(ui.msg) + "</div>";
+    if (ui.newRoom && isCeo()) h += newRoomHtml();
+    if (ui.settings && isCeo()) h += settingsHtml();
+
+    if (ui.tab === "board") {
+      h += ids.length ? boardHtml(SEC) :
+        '<p class="empty">' + (isCeo() ? "＋を押して部屋を作ってください。" : "まだ部屋に入っていません。") + "</p>";
+    } else h += fieldHtml(stale, cold);
+
+    h += '<div class="foot"><span class="sub">同じ部屋の人だけが見られます</span></div></div>';
 
     var act = document.activeElement;
     var keepKey = act && act.getAttribute ? act.getAttribute("data-draft") : null;
     if (keepKey) captureDrafts();
-
     document.getElementById("app").innerHTML = h;
-
     var f = null;
     if (keepKey) f = document.querySelector('textarea[data-draft="' + keepKey + '"]');
     if (!f) f = document.querySelector("#replyInput") || document.querySelector("#addInput");
-    if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e2) {} }
+    if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e) {} }
+  }
+
+  function newRoomHtml() {
+    var h = '<div class="panel"><h3>部屋を作る</h3>' +
+      "<p>入れた人だけが、この部屋の中身を見られます。あとから足すことも外すこともできます。</p>" +
+      '<div class="field"><label>部屋の名前</label>' +
+      '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="例：谷村さん／施設長会"></div>';
+    Object.keys(members).forEach(function (u) {
+      if (u === me.uid) return;
+      var m = members[u] || {};
+      if (m.active === false) return;
+      h += '<label class="chk"><input type="checkbox" data-pickuid="' + u + '"' +
+        (ui.newRoomPick[u] ? " checked" : "") + "><span>" + esc(m.name || m.mail || u) + "</span></label>";
+    });
+    return h + '<button class="btn" data-act="makeroom">作る</button>' +
+      '<button class="btn ghost" data-act="newroom" style="margin-left:8px">やめる</button></div>';
   }
 
   function settingsHtml() {
-    var c = cfg();
     var h = '<div class="panel"><h3>設定</h3>' +
-      "<p>名前を変えると、枠のタイトルと投稿者の表示が一斉に変わります。</p>" +
-      '<div class="field"><label>あなたの名前</label>' +
-      '<input data-cfg="ceoName" value="' + esc(c.ceoName) + '" placeholder="谷口"></div>' +
-      '<div class="field"><label>相手の名前</label>' +
-      '<input data-cfg="mgrName" value="' + esc(c.mgrName) + '" placeholder="谷村"></div>';
+      '<div class="field"><label>あなたの表示名</label>' +
+      '<input data-cfg="ceoName" value="' + esc(conf.ceoName || "") + '" placeholder="谷口"></div>';
+
+    h += '<h3 style="margin-top:18px">部屋</h3><p>入っている人を変えたいときはここから。</p>';
+    myRooms().forEach(function (rid) {
+      var r = rooms[rid];
+      var who = Object.keys(r.members || {}).filter(function (u) { return u !== me.uid; })
+        .map(nameOfUid).join("、");
+      h += '<div class="pline"><span class="pname">' + esc(r.name || "名前なし") + "</span>" +
+        '<span class="pnote">' + esc(who || "自分だけ") + "</span>" +
+        '<button data-act="editroom" data-id="' + rid + '">変える</button>' +
+        '<button data-act="delroom" data-id="' + rid + '">削除</button></div>';
+    });
 
     h += '<h3 style="margin-top:18px">利用者</h3>' +
-      "<p>退職などで見せたくなくなったら「止める」を押してください。その人はすぐに開けなくなります。" +
-      "戻したいときは「戻す」を押します。</p>";
-    Object.keys(members).forEach(function (uid) {
-      var m = members[uid] || {};
-      if (uid === (me && me.uid)) {
-        h += '<div class="pline"><span style="flex:1;font-size:14px">' + esc(m.mail || m.name || uid) +
-          '</span><span style="font-size:12px;color:var(--ink3)">あなた</span></div>';
+      "<p>辞めた人は「止める」を押せば、その場で全部の部屋が見えなくなります。</p>";
+    Object.keys(members).forEach(function (u) {
+      var m = members[u] || {};
+      if (u === me.uid) {
+        h += '<div class="pline"><span class="pname">' + esc(m.name || m.mail || u) +
+          '</span><span class="pnote">あなた</span></div>';
         return;
       }
-      h += '<div class="pline"><span style="flex:1;font-size:14px">' + esc(m.mail || m.name || uid) + "</span>" +
-        '<span style="font-size:12px;color:' + (m.active === false ? "var(--bad)" : "var(--ink3)") + '">' +
+      h += '<div class="pline"><input value="' + esc(m.name || "") + '" data-mname="' + u +
+        '" placeholder="表示名">' +
+        '<span class="pnote" style="color:' + (m.active === false ? "var(--bad)" : "var(--ink3)") + '">' +
         (m.active === false ? "止めています" : "使えます") + "</span>" +
-        '<button data-act="member" data-id="' + uid + '" style="font-weight:700;color:' +
+        '<button data-act="member" data-id="' + u + '" style="font-weight:700;color:' +
         (m.active === false ? "var(--ok)" : "var(--bad)") + '">' +
         (m.active === false ? "戻す" : "止める") + "</button></div>";
     });
 
-    return h + '<div class="switch" style="border:0"><button data-act="settings">設定を閉じる</button></div></div>';
+    if (ui.invite) {
+      h += '<div class="field"><label>名前</label><input id="invName" placeholder="谷村"></div>' +
+        '<div class="field"><label>メールアドレス</label><input id="invMail" type="email" placeholder="mail@example.com"></div>' +
+        '<div class="field"><label>最初のパスワード（6文字以上）</label><input id="invPw" type="text" placeholder="本人に伝えて、あとで変えてもらう"></div>' +
+        '<button class="btn" data-act="doinvite">登録する</button>' +
+        '<button class="btn ghost" data-act="invite" style="margin-left:8px">やめる</button>';
+    } else {
+      h += '<button class="btn ghost" data-act="invite">人を追加する</button>';
+    }
+
+    return h + '<div style="margin-top:16px"><button data-act="settings" style="background:none;border:0;font-size:12px;color:var(--ink3)">設定を閉じる</button></div></div>';
   }
 
   function itemHtml(key, it, opts) {
+    var seen = it.seenBy && Object.keys(it.seenBy).length;
     var h = '<article class="item" data-id="' + it.id + '" data-list="' + key + '" data-done="' +
       (it.done ? 1 : 0) + '">' +
       '<button class="grip" data-grip title="つかんで動かす">⣿</button>' +
       '<div class="ibody"><p class="text">' + esc(it.text) + "</p>" +
-      '<div class="meta">' + (opts.showAuthor ? "<span>" + esc(nameOf(it.author)) + "</span>" : "") +
-      "<span>" + ago(it.createdAt) + "</span>" + (it.seen ? "<span>見た</span>" : "") + "</div>";
+      '<div class="meta"><span>' + esc(nameOfUid(it.by)) + "</span><span>" + ago(it.createdAt) + "</span>" +
+      (seen ? "<span>見た</span>" : "") + "</div>";
 
-    (it.replies || []).forEach(function (r) {
-      h += '<div class="reply"><div class="meta"><span style="color:' + COLOR[r.author] +
-        ';font-weight:700">' + esc(nameOf(r.author)) + "</span><span>" + ago(r.createdAt) +
-        "</span></div><p>" + esc(r.text) + "</p></div>";
+    (it.replies ? toArr(it.replies) : []).forEach(function (r) {
+      h += '<div class="reply"><div class="meta"><span style="font-weight:700">' +
+        esc(nameOfUid(r.by)) + "</span><span>" + ago(r.createdAt) + "</span></div><p>" + esc(r.text) + "</p></div>";
     });
 
     if (ui.replyOpen === it.id) {
@@ -370,11 +462,11 @@ var FIREBASE_CONFIG = {
     }
 
     h += '</div><div class="side">';
-    if (opts.canMark && !it.seen)
+    var mine = it.by === me.uid;
+    if (!mine && !(it.seenBy && it.seenBy[me.uid]))
       h += '<button data-act="seen" data-list="' + key + '" data-id="' + it.id + '">見た</button>';
-    if (opts.canReply)
-      h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
-    if (opts.own)
+    if (!mine) h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
+    if (mine || opts.anyDelete)
       h += '<button data-act="del" data-list="' + key + '" data-id="' + it.id + '">削除</button>';
     return h + "</div></article>";
   }
@@ -386,24 +478,19 @@ var FIREBASE_CONFIG = {
   }
 
   function boardHtml(SEC) {
+    var b = board();
     return SEC.map(function (s) {
-      var items = db[s.key];
+      var items = b[s.key] || [];
       var open = items.filter(function (x) { return !x.done; });
       var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
         '<h2 class="sec-t">' + esc(s.title) + '</h2><span class="sec-n">' + open.length + "件</span></div>" +
-        '<p class="sec-d">' + s.desc + "</p>";
-      h += ui.role === s.writer ? compHtml(s.key, s.ph) : '<p class="empty">' + esc(s.locked) + "</p>";
+        '<p class="sec-d">' + esc(s.desc) + "</p>";
+      var canWrite = s.ceoOnly ? isCeo() : true;
+      h += canWrite ? compHtml(s.key, s.ph) : '<p class="empty">' + esc(s.locked) + "</p>";
       if (!items.length) h += '<p class="empty">まだ何もありません。</p>';
       else {
         h += '<div class="list">';
-        items.forEach(function (it) {
-          h += itemHtml(s.key, it, {
-            own: it.author === ui.role,
-            canReply: it.author !== ui.role,
-            canMark: s.marker === ui.role,
-            showAuthor: false
-          });
-        });
+        items.forEach(function (it) { h += itemHtml(s.key, it, { anyDelete: isCeo() }); });
         h += "</div>";
       }
       return h + "</section>";
@@ -420,15 +507,15 @@ var FIREBASE_CONFIG = {
     }
 
     h += '<div class="pick"><select id="pickSel"><option value="">すべての施設</option>';
-    db.facilities.forEach(function (f) {
+    field.facilities.forEach(function (f) {
       h += '<option value="' + f.id + '"' + (ui.pick === f.id ? " selected" : "") + ">" + esc(f.name) + "</option>";
     });
     h += '</select><button data-act="editlist">' + (ui.editList ? "リストを閉じる" : "施設リスト") + "</button></div>";
 
     if (ui.editList) {
       h += '<div class="panel"><h3>施設リスト</h3>' +
-        "<p>ここに登録した施設が、上の選択と案件・スタッフの選択肢になります。普段は閉じておけます。</p>";
-      db.facilities.forEach(function (f) {
+        "<p>ここに登録した施設が、上の選択と案件・スタッフの選択肢になります。</p>";
+      field.facilities.forEach(function (f) {
         h += '<div class="pline"><input value="' + esc(f.name) + '" data-list="facilities" data-id="' + f.id +
           '" data-field="name" placeholder="施設名">' +
           '<button data-act="del" data-list="facilities" data-id="' + f.id + '">削除</button></div>';
@@ -436,8 +523,8 @@ var FIREBASE_CONFIG = {
       h += addHtml("facilities", "施設を追加", "施設名") + "</div>";
     }
 
-    var shown = db.facilities.filter(function (f) { return !ui.pick || f.id === ui.pick; });
-    if (!db.facilities.length) h += '<p class="empty">「施設リスト」を開いて施設を登録してください。</p>';
+    var shown = field.facilities.filter(function (f) { return !ui.pick || f.id === ui.pick; });
+    if (!field.facilities.length) h += '<p class="empty">「施設リスト」を開いて施設を登録してください。</p>';
 
     shown.forEach(function (f) {
       var key = "fac:" + f.id;
@@ -446,18 +533,15 @@ var FIREBASE_CONFIG = {
         '<span class="fac-n">' + esc(f.name) + '</span><span class="fac-d">' + ago(f.updatedAt) + "</span></div>";
       if ((f.items || []).length) {
         h += '<div class="list">';
-        f.items.forEach(function (it) {
-          h += itemHtml(key, it, { own: true, canReply: it.author !== ui.role, canMark: false, showAuthor: true });
-        });
+        f.items.forEach(function (it) { h += itemHtml(key, it, { anyDelete: isCeo() }); });
         h += "</div>";
       }
       h += compHtml(key, "この施設のことを書き足す", "足す") + "</div>";
     });
 
     var match = function (x) { return !ui.pick || x.place === ui.pick; };
-
-    var open = db.cases.filter(function (c) { return !c.done && match(c); });
-    var done = db.cases.filter(function (c) { return c.done; });
+    var open = field.cases.filter(function (c) { return !c.done && match(c); });
+    var done = field.cases.filter(function (c) { return c.done; });
     h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">対応中の案件</h2>' +
       '<span class="sec-n">' + open.length + "件</span></div>" +
       '<p class="sec-d">7日動かないと上の「止まっているもの」に出ます。手を打ったら「動いた」を押してください。</p>';
@@ -480,7 +564,7 @@ var FIREBASE_CONFIG = {
       '件<button style="background:none;border:0;color:var(--ink2);font-size:12px;margin-left:8px" data-act="clearDone">まとめて消す</button></p>';
     h += "</section>";
 
-    var staff = db.staff.filter(match);
+    var staff = field.staff.filter(match);
     h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">スタッフで気になること</h2>' +
       '<span class="sec-n">' + staff.length + "人</span></div>" +
       '<p class="sec-d">14日話せていない人は上に出ます。声をかけたら「話した」を押してください。</p>';
@@ -503,10 +587,10 @@ var FIREBASE_CONFIG = {
   function addHtml(list, label, ph) {
     if (ui.addOpen !== list) return '<button class="add" data-act="addopen" data-list="' + list + '">＋ ' + label + "</button>";
     var h = '<div class="rin"><input id="addInput" value="' + esc(ui.addDraft) + '" placeholder="' + ph + '">';
-    if (list !== "facilities" && db.facilities.length) {
+    if (list !== "facilities" && field.facilities.length) {
       h += '<select id="addPlace" style="font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:3px;background:var(--surface);padding:0 4px">' +
         '<option value="">施設なし</option>';
-      db.facilities.forEach(function (f) {
+      field.facilities.forEach(function (f) {
         var sel = (ui.addPlace || ui.pick) === f.id ? " selected" : "";
         h += '<option value="' + f.id + '"' + sel + ">" + esc(f.name) + "</option>";
       });
@@ -516,7 +600,6 @@ var FIREBASE_CONFIG = {
   }
 
   /* ---------- 操作 ---------- */
-
   document.addEventListener("click", function (e) {
     var b = e.target.closest ? e.target.closest("[data-act]") : null;
     if (!b) return;
@@ -528,8 +611,7 @@ var FIREBASE_CONFIG = {
       ui.gateErr = "";
       auth.signInWithEmailAndPassword((m ? m.value : "").trim(), w ? w.value : "")
         .catch(function (err) {
-          ui.gateErr = err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" ||
-            err.code === "auth/user-not-found"
+          ui.gateErr = /invalid-credential|wrong-password|user-not-found/.test(err.code)
             ? "メールアドレスかパスワードが違います。" : "開けませんでした（" + err.code + "）";
           render();
         });
@@ -546,35 +628,92 @@ var FIREBASE_CONFIG = {
     }
 
     captureDrafts();
+    ui.msg = "";
 
-    if (act === "tab") ui.tab = v;
+    if (act === "logout") { auth.signOut(); return; }
+    else if (act === "tab") ui.tab = v;
+    else if (act === "room") { ui.room = id; ui.replyOpen = null; }
     else if (act === "settings") ui.settings = !ui.settings;
-    else if (act === "logout") { auth.signOut(); return; }
+    else if (act === "invite") ui.invite = !ui.invite;
+    else if (act === "newroom") { ui.newRoom = !ui.newRoom; ui.newRoomName = ""; ui.newRoomPick = {}; }
+    else if (act === "makeroom") {
+      var nm = (ui.newRoomName || "").trim();
+      if (!nm) { ui.msg = "部屋の名前を入れてください。"; render(); return; }
+      var mem = {}; mem[me.uid] = true;
+      Object.keys(ui.newRoomPick).forEach(function (u) { if (ui.newRoomPick[u]) mem[u] = true; });
+      var rid = uid();
+      rtdb.ref("rooms/" + rid).set({ name: nm, members: mem, board: EMPTY_BOARD })
+        .then(function () {
+          var up = {};
+          Object.keys(mem).forEach(function (u) { up["members/" + u + "/rooms/" + rid] = true; });
+          return rtdb.ref().update(up);
+        })
+        .then(function () { ui.room = rid; ui.newRoom = false; render(); })
+        .catch(function (err) { ui.msg = "作れませんでした（" + err.code + "）"; render(); });
+      return;
+    }
+    else if (act === "editroom") {
+      var r = rooms[id];
+      ui.newRoom = true; ui.newRoomName = r.name || ""; ui.newRoomPick = {};
+      Object.keys(r.members || {}).forEach(function (u) { ui.newRoomPick[u] = true; });
+      ui.editingRoom = id;
+      ui.settings = false;
+    }
+    else if (act === "delroom") {
+      var rr = rooms[id];
+      if (!confirm("「" + (rr.name || "") + "」を消します。中身も消えます。よろしいですか？")) return;
+      var upd = {}; upd["rooms/" + id] = null;
+      Object.keys(rr.members || {}).forEach(function (u) { upd["members/" + u + "/rooms/" + id] = null; });
+      rtdb.ref().update(upd).catch(function (err) { alert("消せませんでした（" + err.code + "）"); });
+      return;
+    }
     else if (act === "member") {
       var cur = members[id] || {};
       var next = cur.active === false;
-      if (!next && !confirm((cur.mail || id) + " をこのボードから締め出します。よろしいですか？")) return;
-      rtdb.ref("members/" + id + "/active").set(next).catch(function (err) {
-        alert("変更できませんでした（" + err.code + "）");
-      });
+      if (!next && !confirm((cur.name || cur.mail || id) + " を全部の部屋から締め出します。よろしいですか？")) return;
+      rtdb.ref("members/" + id + "/active").set(next)
+        .catch(function (err) { alert("変更できませんでした（" + err.code + "）"); });
+      return;
+    }
+    else if (act === "doinvite") {
+      var n = document.querySelector("#invName"), em = document.querySelector("#invMail"), pw = document.querySelector("#invPw");
+      var nv = (n ? n.value : "").trim(), ev = (em ? em.value : "").trim(), pv = pw ? pw.value : "";
+      if (!nv || !ev || pv.length < 6) { ui.msg = "名前・メール・6文字以上のパスワードを入れてください。"; render(); return; }
+      var second = firebase.apps.filter(function (a) { return a.name === "invite"; })[0] ||
+        firebase.initializeApp(FIREBASE_CONFIG, "invite");
+      second.auth().createUserWithEmailAndPassword(ev, pv)
+        .then(function (cred) {
+          var u = cred.user.uid;
+          return second.auth().signOut().then(function () {
+            return rtdb.ref("members/" + u).set({ name: nv, mail: ev, role: "mgr", active: true });
+          });
+        })
+        .then(function () { ui.invite = false; ui.msg = nv + " を登録しました。部屋に入れてください。"; render(); })
+        .catch(function (err) {
+          ui.msg = err.code === "auth/email-already-in-use" ? "そのメールアドレスは登録済みです。" :
+            "登録できませんでした（" + err.code + "）";
+          render();
+        });
       return;
     }
     else if (act === "post") {
       var t = (ui.draft[list] || "").trim(); if (!t) return;
-      var sec = sections().filter(function (x) { return x.key === list; })[0];
-      arrFor(list).unshift({ id: uid(), text: t, author: sec ? sec.voice : ui.role,
-        createdAt: now(), seen: false, done: false, replies: [] });
+      arrFor(list).unshift({ id: uid(), text: t, by: me.uid, createdAt: now(), done: false, seenBy: {}, replies: [] });
       if (list.indexOf("fac:") === 0) { var f0 = fac(list.slice(4)); if (f0) f0.updatedAt = now(); }
-      ui.draft[list] = ""; save();
+      ui.draft[list] = ""; saveFor(list);
     }
-    else if (act === "seen") { it = find(list, id); if (it) it.seen = true; save(); }
+    else if (act === "seen") {
+      it = find(list, id);
+      if (it) { it.seenBy = it.seenBy || {}; it.seenBy[me.uid] = true; saveFor(list); }
+    }
     else if (act === "reply") { ui.replyOpen = ui.replyOpen === id ? null : id; ui.replyDraft = ""; }
     else if (act === "rsend") {
       var rv = (ui.replyDraft || "").trim(); if (!rv) return;
       it = find(list, id); if (!it) return;
-      it.replies = it.replies || [];
-      it.replies.push({ id: uid(), text: rv, author: ui.role, createdAt: now() });
-      it.seen = true; ui.replyOpen = null; ui.replyDraft = ""; save();
+      it.replies = toArr(it.replies);
+      it.replies.push({ id: uid(), text: rv, by: me.uid, createdAt: now() });
+      it.seenBy = it.seenBy || {}; it.seenBy[me.uid] = true;
+      ui.replyOpen = null; ui.replyDraft = ""; saveFor(list);
     }
     else if (act === "del") {
       var target = find(list, id);
@@ -583,44 +722,65 @@ var FIREBASE_CONFIG = {
       if (!confirm("「" + label + "」を削除します。元に戻せません。よろしいですか？")) return;
       setArr(list, arrFor(list).filter(function (x) { return x.id !== id; }));
       if (list === "facilities" && ui.pick === id) ui.pick = "";
-      save();
+      saveFor(list);
     }
-    else if (act === "cycle") { it = fac(id); it.status = NEXT[it.status]; it.updatedAt = now(); save(); }
-    else if (act === "bump") { it = find("cases", id); it.updatedAt = now(); save(); }
-    else if (act === "finish") { it = find("cases", id); it.done = true; it.updatedAt = now(); save(); }
-    else if (act === "talked") { it = find("staff", id); it.followedAt = now(); save(); }
-    else if (act === "clearDone") { db.cases = db.cases.filter(function (c) { return !c.done; }); save(); }
+    else if (act === "cycle") { it = fac(id); it.status = NEXT[it.status]; it.updatedAt = now(); saveField(); }
+    else if (act === "bump") { it = find("cases", id); it.updatedAt = now(); saveField(); }
+    else if (act === "finish") { it = find("cases", id); it.done = true; it.updatedAt = now(); saveField(); }
+    else if (act === "talked") { it = find("staff", id); it.followedAt = now(); saveField(); }
+    else if (act === "clearDone") { field.cases = field.cases.filter(function (c) { return !c.done; }); saveField(); }
     else if (act === "editlist") ui.editList = !ui.editList;
     else if (act === "addopen") { ui.addOpen = list; ui.addDraft = ""; ui.addPlace = ui.pick || ""; }
     else if (act === "addsend") {
       var av = (ui.addDraft || "").trim(); if (!av) return;
-      if (list === "facilities") db.facilities.push({ id: uid(), name: av, status: "green", items: [], updatedAt: now() });
-      if (list === "cases") db.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "", next: "",
+      if (list === "facilities") field.facilities.push({ id: uid(), name: av, status: "green", items: [], updatedAt: now() });
+      if (list === "cases") field.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "", next: "",
         createdAt: now(), updatedAt: now(), done: false });
-      if (list === "staff") db.staff.push({ id: uid(), name: av, place: ui.addPlace || "", concern: "", followedAt: now() });
-      ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; save();
-    }
-    else if (act === "reset") {
-      if (!confirm("すべての内容を消して最初からにします。よろしいですか？")) return;
-      var keep = cfg();
-      db = JSON.parse(JSON.stringify(EMPTY)); db.config = keep; save();
+      if (list === "staff") field.staff.push({ id: uid(), name: av, place: ui.addPlace || "", concern: "", followedAt: now() });
+      ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; saveField();
     }
     render();
   });
+
+  /* 部屋の作り直し（編集） */
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest('[data-act="makeroom"]') : null;
+    if (!b || !ui.editingRoom) return;
+    var rid = ui.editingRoom; ui.editingRoom = null;
+    var mem = {}; mem[me.uid] = true;
+    Object.keys(ui.newRoomPick).forEach(function (u) { if (ui.newRoomPick[u]) mem[u] = true; });
+    var old = Object.keys((rooms[rid] || {}).members || {});
+    var upd = {};
+    upd["rooms/" + rid + "/name"] = (ui.newRoomName || "").trim() || rooms[rid].name;
+    upd["rooms/" + rid + "/members"] = mem;
+    old.forEach(function (u) { if (!mem[u]) upd["members/" + u + "/rooms/" + rid] = null; });
+    Object.keys(mem).forEach(function (u) { upd["members/" + u + "/rooms/" + rid] = true; });
+    rtdb.ref().update(upd).catch(function (err) { alert("変更できませんでした（" + err.code + "）"); });
+  }, true);
 
   document.addEventListener("change", function (e) {
     var i = e.target;
     if (i.id === "pickSel") { captureDrafts(); ui.pick = i.value; render(); return; }
     if (i.id === "addPlace") { ui.addPlace = i.value; return; }
+    if (i.hasAttribute && i.hasAttribute("data-pickuid")) {
+      captureDrafts();
+      ui.newRoomPick[i.getAttribute("data-pickuid")] = i.checked;
+      return;
+    }
+    if (i.hasAttribute && i.hasAttribute("data-mname")) {
+      rtdb.ref("members/" + i.getAttribute("data-mname") + "/name").set(i.value.trim());
+      return;
+    }
     if (i.hasAttribute && i.hasAttribute("data-cfg")) {
-      cfg()[i.getAttribute("data-cfg")] = i.value.trim();
-      save(); render(); return;
+      rtdb.ref("config/" + i.getAttribute("data-cfg")).set(i.value.trim());
+      return;
     }
     if (!i.hasAttribute || !i.hasAttribute("data-field")) return;
-    var o = find(i.getAttribute("data-list"), i.getAttribute("data-id"));
+    var key = i.getAttribute("data-list");
+    var o = find(key, i.getAttribute("data-id"));
     if (!o) return;
     o[i.getAttribute("data-field")] = i.value;
-    save();
+    saveFor(key);
     if (i.getAttribute("data-field") === "name") render();
   });
 
@@ -674,35 +834,64 @@ var FIREBASE_CONFIG = {
     setArr(drag.list, ids.map(function (id) {
       return arr.filter(function (x) { return x.id === id; })[0];
     }).filter(Boolean));
+    var k = drag.list;
     drag.item.classList.remove("dragging");
     drag = null;
     document.body.style.userSelect = "";
-    save(); render();
+    saveFor(k); render();
   }
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
 
   /* ---------- 起動 ---------- */
+  function watchRoom(rid) {
+    if (roomRefs[rid]) return;
+    roomRefs[rid] = rtdb.ref("rooms/" + rid);
+    roomRefs[rid].on("value", function (s) {
+      var v = s.val();
+      if (!v) { delete rooms[rid]; }
+      else { v.board = normBoard(v.board); rooms[rid] = v; }
+      render();
+    }, function () { delete rooms[rid]; render(); });
+  }
+  function unwatchAll() {
+    Object.keys(roomRefs).forEach(function (rid) { roomRefs[rid].off(); delete roomRefs[rid]; });
+    rooms = {};
+  }
 
   auth.onAuthStateChanged(function (u) {
-    if (!u) { me = null; ui.role = null; members = {}; render(); return; }
+    if (!u) { me = null; members = {}; unwatchAll(); render(); return; }
     rtdb.ref("members/" + u.uid).on("value", function (snap) {
       var m = snap.val();
       if (!m || m.active === false) {
-        me = null; ui.role = null;
+        me = null; unwatchAll();
         ui.gateErr = "このアカウントは今このボードを見られません。";
-        auth.signOut();
-        render();
-        return;
+        auth.signOut(); render(); return;
       }
-      me = { uid: u.uid, role: m.role === "ceo" ? "ceo" : "mgr", mail: u.email };
-      ui.role = me.role;
-      rtdb.ref("board").on("value", function (s2) { db = normalize(s2.val()); render(); });
-      if (me.role === "ceo")
-        rtdb.ref("members").on("value", function (s3) { members = s3.val() || {}; render(); });
+      me = { uid: u.uid, role: m.role === "ceo" ? "ceo" : "mgr", name: m.name || "", mail: u.email };
+
+      var wanted = Object.keys(m.rooms || {});
+      Object.keys(roomRefs).forEach(function (rid) {
+        if (wanted.indexOf(rid) < 0 && !isCeo()) { roomRefs[rid].off(); delete roomRefs[rid]; delete rooms[rid]; }
+      });
+      wanted.forEach(watchRoom);
+
+      if (isCeo()) {
+        rtdb.ref("rooms").on("value", function (s) {
+          var v = s.val() || {};
+          Object.keys(v).forEach(function (rid) { v[rid].board = normBoard(v[rid].board); });
+          rooms = v; render();
+        });
+        rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); });
+      } else {
+        rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); }, function () {});
+      }
+
+      rtdb.ref("config").on("value", function (s) { conf = s.val() || { ceoName: "谷口" }; render(); });
+      rtdb.ref("field").on("value", function (s) { field = normField(s.val()); render(); });
       render();
     }, function () {
-      ui.gateErr = "このアカウントは今このボードを見られません。";
+      me = null; ui.gateErr = "このアカウントは今このボードを見られません。";
       auth.signOut(); render();
     });
   });

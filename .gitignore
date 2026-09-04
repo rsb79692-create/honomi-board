@@ -5,3 +5,4 @@ serviceAccount*.json
 .env.*
 node_modules/
 .firebase/
+_backup_*/
