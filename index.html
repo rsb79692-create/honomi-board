@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>穂乃味ボード</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --paper:#E7E9E2; --surface:#FCFCFA; --ink:#1D2226; --ink2:#5E666C; --ink3:#8D9499;
+    --line:#D3D6CB; --ceo:#2E4A6B; --mgr:#55457A; --ok:#4C8055; --warn:#C88F1E; --bad:#B8443A;
+  }
+  html, body { margin:0; padding:0; background:var(--paper); }
+  body { font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif;
+    color:var(--ink); -webkit-font-smoothing:antialiased; padding-bottom:48px; }
+  #app { max-width:640px; margin:0 auto; }
+  button { font-family:inherit; cursor:pointer; }
+  :focus-visible { outline:2px solid var(--ceo); outline-offset:2px; }
+
+  .gate { padding:60px 20px; max-width:360px; margin:0 auto; }
+  .gate h1 { font-size:19px; margin:0 0 6px; letter-spacing:.04em; }
+  .gate p { font-size:13px; color:var(--ink2); line-height:1.7; margin:0 0 20px; }
+  .gate input { width:100%; padding:12px; font-size:16px; font-family:inherit; border:1px solid var(--line);
+    border-radius:3px; background:var(--surface); color:var(--ink); }
+  .gate button { width:100%; margin-top:10px; padding:12px; font-size:14px; font-weight:600; border:0;
+    border-radius:3px; background:var(--ink); color:#fff; }
+  .gate .err { color:var(--bad); font-size:13px; margin-top:10px; }
+
+  .top { padding:14px 14px 0; }
+  .brand { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .name { font-size:17px; font-weight:700; letter-spacing:.04em; margin:0; }
+  .sub { font-size:11px; color:var(--ink3); }
+  .whoami { display:flex; align-items:center; gap:10px; margin-top:8px; font-size:12px; color:var(--ink2); }
+  .whoami .tagme { font-weight:700; color:#fff; padding:3px 9px; border-radius:3px; font-size:12px; }
+  .whoami button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; }
+  .tabs { display:flex; margin-top:14px; border-bottom:1px solid var(--line); }
+  .tabs button { flex:1; padding:11px 0 9px; background:none; border:0; border-bottom:2px solid transparent;
+    font-size:14px; font-weight:600; color:var(--ink3); margin-bottom:-1px;
+    display:flex; align-items:center; justify-content:center; gap:6px; }
+  .tabs button[data-on="1"] { color:var(--ink); border-bottom-color:var(--ink); }
+  .badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--bad); color:#fff;
+    font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+
+  .body { padding:4px 14px 0; }
+  .notice { margin-top:14px; border:1px solid var(--warn); border-radius:4px; background:var(--surface);
+    padding:10px 12px; font-size:13px; line-height:1.7; color:var(--ink2); }
+  .sec { margin-top:20px; border-left:3px solid var(--line); padding-left:11px; }
+  .sec[data-v="ceo"] { border-left-color:var(--ceo); }
+  .sec[data-v="mgr"] { border-left-color:var(--mgr); }
+  .sec-h { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .sec-t { font-size:15px; font-weight:700; margin:0; }
+  .sec-n { font-size:11px; color:var(--ink3); }
+  .sec-d { font-size:12px; color:var(--ink2); margin:3px 0 10px; line-height:1.6; }
+
+  .comp { background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:9px 10px; margin-top:8px; }
+  .comp textarea { width:100%; border:0; resize:none; font-family:inherit; font-size:14px; line-height:1.65;
+    background:transparent; color:var(--ink); min-height:44px; }
+  .comp textarea:focus { outline:none; }
+  .comp textarea::placeholder { color:var(--ink3); }
+  .comp-b { display:flex; align-items:center; margin-top:6px; }
+  .send { margin-left:auto; padding:6px 14px; font-size:13px; font-weight:600; border:0; border-radius:3px;
+    background:var(--ink); color:#fff; }
+  .send.plain { margin-left:0; }
+
+  .list { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; }
+  .item { display:flex; align-items:flex-start; gap:6px; padding:9px 8px 9px 4px;
+    border-top:1px solid var(--line); background:var(--surface); }
+  .item:first-child { border-top:0; }
+  .item[data-done="1"] .text { color:var(--ink3); text-decoration:line-through; }
+  .item.dragging { opacity:.5; }
+  .grip { align-self:stretch; width:28px; min-height:40px; border:0; background:transparent; padding:0;
+    color:#BFC4BB; font-size:15px; letter-spacing:1px; cursor:grab; touch-action:none; }
+  .grip:hover { color:var(--ink2); background:#F1F2EC; }
+  .grip:active { cursor:grabbing; }
+  .ibody { flex:1; min-width:0; }
+  .side { display:flex; flex-direction:column; align-items:flex-end; gap:5px; flex:none; padding-top:1px; }
+  .side button { background:none; border:0; padding:1px 0; font-size:12px; font-weight:600; color:var(--ink2); }
+  .side button[data-act="del"] { color:var(--ink3); font-weight:400; }
+  .text { font-size:14px; line-height:1.7; white-space:pre-wrap; word-break:break-word; margin:0; }
+  .meta { display:flex; align-items:center; gap:7px; font-size:11px; color:var(--ink3); margin-top:4px; flex-wrap:wrap; }
+  .reply { margin-top:9px; padding-left:10px; border-left:2px solid var(--line); }
+  .reply p { margin:0; font-size:13px; line-height:1.65; white-space:pre-wrap; }
+  .rin { display:flex; gap:6px; margin-top:8px; }
+  .rin input { flex:1; border:1px solid var(--line); border-radius:3px; padding:8px 9px; font-size:13px;
+    font-family:inherit; background:var(--surface); color:var(--ink); }
+  .empty { font-size:13px; color:var(--ink3); line-height:1.7; padding:12px 0 2px; margin:0; }
+
+  .alert { margin-top:14px; border:1px solid var(--bad); border-radius:4px; background:var(--surface); overflow:hidden; }
+  .alert-h { padding:9px 12px; font-size:13px; font-weight:700; color:var(--bad); border-bottom:1px solid var(--line); }
+  .alert ul { margin:0; padding:8px 12px 10px 26px; }
+  .alert li { font-size:13px; line-height:1.75; }
+
+  .pick { display:flex; align-items:center; gap:8px; margin-top:14px; }
+  .pick select { flex:1; font-family:inherit; font-size:15px; font-weight:600; padding:10px;
+    border:1px solid var(--line); border-radius:3px; background:var(--surface); color:var(--ink); }
+  .pick button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; white-space:nowrap; }
+
+  .panel { margin-top:10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); padding:12px; }
+  .panel h3 { margin:0 0 4px; font-size:13px; font-weight:700; }
+  .panel p { margin:0 0 8px; font-size:12px; color:var(--ink2); line-height:1.7; }
+  .pline { display:flex; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--line); }
+  .pline:first-of-type { border-top:0; }
+  .pline input { flex:1; border:0; border-bottom:1px dashed var(--line); background:transparent;
+    font-family:inherit; font-size:14px; padding:3px 0; color:var(--ink); }
+  .pline input:focus { outline:none; border-bottom-color:var(--ink); }
+  .pline button { background:none; border:0; font-size:12px; color:var(--ink3); }
+  .field { margin-top:12px; }
+  .field label { display:block; font-size:12px; font-weight:700; margin-bottom:4px; }
+  .field input { width:100%; padding:9px; font-size:14px; font-family:inherit; border:1px solid var(--line);
+    border-radius:3px; background:var(--paper); color:var(--ink); }
+  .switch { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .switch button { padding:7px 12px; font-size:13px; font-weight:600; border-radius:3px; border:1px solid var(--line);
+    background:transparent; color:var(--ink2); }
+  .switch button[data-on="1"] { background:var(--bad); border-color:var(--bad); color:#fff; }
+
+  .fac { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:12px; overflow:hidden; }
+  .fac-h { display:flex; align-items:center; gap:10px; padding:11px 12px; border-bottom:1px solid var(--line); }
+  .dot { width:16px; height:16px; border-radius:50%; flex:none; border:0; padding:0; }
+  .fac-n { font-size:15px; font-weight:700; flex:1; }
+  .fac-d { font-size:11px; color:var(--ink3); }
+  .fac .list { border:0; border-radius:0; margin:0; }
+  .fac .item { border-top:1px solid var(--line); }
+  .fac .comp { border:0; border-top:1px solid var(--line); border-radius:0; margin:0; background:#FAFAF7; }
+
+  .row { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; padding:10px 12px; }
+  .row.stale { border-color:var(--bad); }
+  .row-h { display:flex; align-items:center; gap:10px; }
+  .row-n { font-size:14px; font-weight:700; flex:1; }
+  .row-d { font-size:11px; color:var(--ink3); }
+  .flag { font-size:11px; font-weight:700; color:var(--bad); }
+  .tag { font-size:11px; color:var(--ink3); }
+  .inline { width:100%; margin-top:7px; border:0; border-bottom:1px dashed var(--line); background:transparent;
+    font-family:inherit; font-size:13px; line-height:1.6; color:var(--ink2); padding:3px 0; }
+  .inline:focus { outline:none; border-bottom-color:var(--ink); color:var(--ink); }
+  .acts { display:flex; gap:14px; margin-top:9px; align-items:center; }
+  .acts button { background:none; border:0; padding:0; font-size:12px; color:var(--ink2); font-weight:600; }
+  .acts .del { margin-left:auto; color:var(--ink3); font-weight:400; }
+  .add { width:100%; margin-top:8px; padding:9px; border:1px dashed var(--line); border-radius:4px;
+    background:transparent; font-size:13px; color:var(--ink2); font-weight:600; }
+  .foot { margin-top:26px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .foot button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ▼▼ Firebaseコンソールの「ウェブアプリ」からコピーした値をここに貼る ▼▼ */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDkYQ5d8mskHo94WIysaFYP8VT2bIZ9Vtc",
+  authDomain: "honomi-timecard.firebaseapp.com",
+  databaseURL: "https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "honomi-timecard",
+  appId: "1:972990519633:web:68913a33250e5be920db70"
+};
+/* ▲▲ ここまで ▲▲ */
+</script>
+
+<script>
+(function () {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  var auth = firebase.auth(), rtdb = firebase.database();
+  var me = null, members = {}, saveTimer = null;
+  var DAY = 86400000;
+  var STATUS = { green: "var(--ok)", yellow: "var(--warn)", red: "var(--bad)" };
+  var NEXT = { green: "yellow", yellow: "red", red: "green" };
+  var COLOR = { ceo: "var(--ceo)", mgr: "var(--mgr)" };
+  var EMPTY = {
+    config: { ceoName: "谷口", mgrName: "谷村" },
+    ceoMind: [], toCeo: [], mgrAsk: [], toManager: [], facilities: [], staff: [], cases: []
+  };
+
+  var db = JSON.parse(JSON.stringify(EMPTY));
+  var ui = { role: null, tab: "board", saving: "", draft: {}, replyOpen: null, replyDraft: "",
+             addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
+             settings: false, gateErr: "" };
+
+  function cfg() { return db.config; }
+  function nameOf(r) { return r === "ceo" ? cfg().ceoName : cfg().mgrName; }
+
+  function sections() {
+    var a = cfg().ceoName, b = cfg().mgrName;
+    return [
+      { key: "ceoMind", voice: "ceo", title: a + "ビジョン",
+        desc: "今考えていること、気になっていること、会社として進めたいこと。",
+        locked: a + "さんが書く場所です。読んで、気になったらコメントしてください。",
+        ph: "いま頭にあることを、まとまっていなくても書く", writer: "ceo", marker: "mgr" },
+      { key: "toCeo", voice: "mgr", title: b + "レポート",
+        desc: "現場で見えたこと、起きていること、気づいたこと。",
+        locked: b + "さんが書く場所です。目を通したら「見た」を押してください。",
+        ph: "現場で見えたこと、気づいたことを書く", writer: "mgr", marker: "ceo" },
+      { key: "mgrAsk", voice: "mgr", title: b + "からの相談",
+        desc: "迷っていること、判断を仰ぎたいこと、こうしたらどうかという案。",
+        locked: b + "さんが書く場所です。目を通したら「見た」を押してください。",
+        ph: "相談したいこと・提案を書く", writer: "mgr", marker: "ceo" },
+      { key: "toManager", voice: "ceo", title: a + "からの指針",
+        desc: "どう考えているか、何を決めたか、先に伝えておきたいこと。",
+        locked: a + "さんが書く場所です。目を通したら「見た」を押してください。",
+        ph: "考え方・判断・伝えておきたいことを書く", writer: "ceo", marker: "mgr" }
+    ];
+  }
+
+  function normalize(d) {
+    d = Object.assign({}, JSON.parse(JSON.stringify(EMPTY)), d || {});
+    d.config = Object.assign({}, EMPTY.config, d.config || {});
+    ["ceoMind", "toCeo", "mgrAsk", "toManager", "facilities", "staff", "cases"].forEach(function (k) {
+      if (!Array.isArray(d[k])) d[k] = d[k] ? Object.keys(d[k]).map(function (i) { return d[k][i]; }) : [];
+    });
+    d.facilities.forEach(function (f) { if (!Array.isArray(f.items)) f.items = f.items ? Object.keys(f.items).map(function (i) { return f.items[i]; }) : []; });
+    return d;
+  }
+
+  function save() {
+    ui.saving = "保存中";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      rtdb.ref("board").set(JSON.parse(JSON.stringify(db)))
+        .then(function () { ui.saving = "保存済み"; paintStatus(); })
+        .catch(function (e) { ui.saving = "保存できません（" + e.code + "）"; paintStatus(); });
+    }, 400);
+    paintStatus();
+  }
+  function paintStatus() {
+    var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || "";
+  }
+  function uid() { return Math.random().toString(36).slice(2, 9) + Date.now().toString(36); }
+  function now() { return Date.now(); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function ago(ts) {
+    if (!ts) return "未";
+    var d = Math.floor((now() - ts) / DAY);
+    if (d <= 0) return "今日"; if (d === 1) return "昨日";
+    if (d < 31) return d + "日前"; return Math.floor(d / 30) + "か月前";
+  }
+  function fac(id) { return db.facilities.filter(function (f) { return f.id === id; })[0]; }
+  function facName(id) { var f = fac(id); return f ? f.name : ""; }
+  function arrFor(key) {
+    if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (!f) return []; if (!f.items) f.items = []; return f.items; }
+    return db[key];
+  }
+  function setArr(key, v) {
+    if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.items = v; }
+    else db[key] = v;
+  }
+  function find(key, id) { return arrFor(key).filter(function (x) { return x.id === id; })[0]; }
+
+  /* ---------- 入口（ログイン） ---------- */
+
+  function gateHtml() {
+    return '<div class="gate"><h1>穂乃味ボード</h1>' +
+      "<p>メールアドレスとパスワードを入れてください。</p>" +
+      '<input id="mail" type="email" inputmode="email" placeholder="メールアドレス" autocomplete="username">' +
+      '<input id="pw" type="password" placeholder="パスワード" autocomplete="current-password" style="margin-top:8px">' +
+      '<button data-act="login">開く</button>' +
+      '<button data-act="forgot" style="background:transparent;color:var(--ink3);font-weight:400">パスワードを忘れた</button>' +
+      (ui.gateErr ? '<p class="err">' + esc(ui.gateErr) + "</p>" : "") + "</div>";
+  }
+
+  function captureDrafts() {
+    var t = document.querySelectorAll("textarea[data-draft]");
+    for (var i = 0; i < t.length; i++) ui.draft[t[i].getAttribute("data-draft")] = t[i].value;
+    var r = document.querySelector("#replyInput"); if (r) ui.replyDraft = r.value;
+    var a = document.querySelector("#addInput"); if (a) ui.addDraft = a.value;
+    var ap = document.querySelector("#addPlace"); if (ap) ui.addPlace = ap.value;
+  }
+
+  /* ---------- 描画 ---------- */
+
+  function render() {
+    if (!ui.role) {
+      document.getElementById("app").innerHTML = gateHtml();
+      var p = document.querySelector("#pin"); if (p) p.focus();
+      return;
+    }
+
+    var SEC = sections();
+    var unread = 0;
+    SEC.forEach(function (sc) {
+      if (sc.marker !== ui.role) return;
+      unread += db[sc.key].filter(function (x) { return !x.seen && !x.done; }).length;
+    });
+    var stale = db.cases.filter(function (c) { return !c.done && now() - c.updatedAt > 7 * DAY; });
+    var cold = db.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
+    var alerts = stale.length + cold.length;
+
+    var h = '<div class="top"><div class="brand"><h1 class="name">穂乃味ボード</h1>' +
+      '<span class="sub" id="status">' + esc(ui.saving || "") + "</span></div>" +
+      '<div class="whoami"><span class="tagme" style="background:' + COLOR[ui.role] + '">' +
+      esc(nameOf(ui.role)) + "</span>" +
+      (ui.role === "ceo" ? '<button data-act="settings">設定</button>' : "") +
+      '<button data-act="logout">ログアウト</button></div>' +
+      '<div class="tabs">' +
+      '<button data-act="tab" data-v="board" data-on="' + (ui.tab === "board" ? 1 : 0) + '">共有ボード' +
+      (unread ? '<span class="badge">' + unread + "</span>" : "") + "</button>" +
+      '<button data-act="tab" data-v="field" data-on="' + (ui.tab === "field" ? 1 : 0) + '">現場マネジメント' +
+      (alerts ? '<span class="badge">' + alerts + "</span>" : "") + "</button></div></div>";
+
+    h += '<div class="body">';
+    if (ui.role === "ceo" && !Object.keys(members).length)
+      h += '<div class="notice">利用者がまだ登録されていません。設定を開いて確認してください。</div>';
+    if (ui.settings && ui.role === "ceo") h += settingsHtml();
+    h += (ui.tab === "board" ? boardHtml(SEC) : fieldHtml(stale, cold)) +
+      '<div class="foot"><span class="sub">2人で同じ内容を見ています</span>' +
+      (ui.role === "ceo" ? '<button data-act="reset">全部消す</button>' : "") + "</div></div>";
+
+    var act = document.activeElement;
+    var keepKey = act && act.getAttribute ? act.getAttribute("data-draft") : null;
+    if (keepKey) captureDrafts();
+
+    document.getElementById("app").innerHTML = h;
+
+    var f = null;
+    if (keepKey) f = document.querySelector('textarea[data-draft="' + keepKey + '"]');
+    if (!f) f = document.querySelector("#replyInput") || document.querySelector("#addInput");
+    if (f) { f.focus(); try { f.setSelectionRange(f.value.length, f.value.length); } catch (e2) {} }
+  }
+
+  function settingsHtml() {
+    var c = cfg();
+    var h = '<div class="panel"><h3>設定</h3>' +
+      "<p>名前を変えると、枠のタイトルと投稿者の表示が一斉に変わります。</p>" +
+      '<div class="field"><label>あなたの名前</label>' +
+      '<input data-cfg="ceoName" value="' + esc(c.ceoName) + '" placeholder="谷口"></div>' +
+      '<div class="field"><label>相手の名前</label>' +
+      '<input data-cfg="mgrName" value="' + esc(c.mgrName) + '" placeholder="谷村"></div>';
+
+    h += '<h3 style="margin-top:18px">利用者</h3>' +
+      "<p>退職などで見せたくなくなったら「止める」を押してください。その人はすぐに開けなくなります。" +
+      "戻したいときは「戻す」を押します。</p>";
+    Object.keys(members).forEach(function (uid) {
+      var m = members[uid] || {};
+      if (uid === (me && me.uid)) {
+        h += '<div class="pline"><span style="flex:1;font-size:14px">' + esc(m.mail || m.name || uid) +
+          '</span><span style="font-size:12px;color:var(--ink3)">あなた</span></div>';
+        return;
+      }
+      h += '<div class="pline"><span style="flex:1;font-size:14px">' + esc(m.mail || m.name || uid) + "</span>" +
+        '<span style="font-size:12px;color:' + (m.active === false ? "var(--bad)" : "var(--ink3)") + '">' +
+        (m.active === false ? "止めています" : "使えます") + "</span>" +
+        '<button data-act="member" data-id="' + uid + '" style="font-weight:700;color:' +
+        (m.active === false ? "var(--ok)" : "var(--bad)") + '">' +
+        (m.active === false ? "戻す" : "止める") + "</button></div>";
+    });
+
+    return h + '<div class="switch" style="border:0"><button data-act="settings">設定を閉じる</button></div></div>';
+  }
+
+  function itemHtml(key, it, opts) {
+    var h = '<article class="item" data-id="' + it.id + '" data-list="' + key + '" data-done="' +
+      (it.done ? 1 : 0) + '">' +
+      '<button class="grip" data-grip title="つかんで動かす">⣿</button>' +
+      '<div class="ibody"><p class="text">' + esc(it.text) + "</p>" +
+      '<div class="meta">' + (opts.showAuthor ? "<span>" + esc(nameOf(it.author)) + "</span>" : "") +
+      "<span>" + ago(it.createdAt) + "</span>" + (it.seen ? "<span>見た</span>" : "") + "</div>";
+
+    (it.replies || []).forEach(function (r) {
+      h += '<div class="reply"><div class="meta"><span style="color:' + COLOR[r.author] +
+        ';font-weight:700">' + esc(nameOf(r.author)) + "</span><span>" + ago(r.createdAt) +
+        "</span></div><p>" + esc(r.text) + "</p></div>";
+    });
+
+    if (ui.replyOpen === it.id) {
+      h += '<div class="rin"><input id="replyInput" value="' + esc(ui.replyDraft) +
+        '" placeholder="コメントを書く"><button class="send plain" data-act="rsend" data-list="' +
+        key + '" data-id="' + it.id + '">送る</button></div>';
+    }
+
+    h += '</div><div class="side">';
+    if (opts.canMark && !it.seen)
+      h += '<button data-act="seen" data-list="' + key + '" data-id="' + it.id + '">見た</button>';
+    if (opts.canReply)
+      h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
+    if (opts.own)
+      h += '<button data-act="del" data-list="' + key + '" data-id="' + it.id + '">削除</button>';
+    return h + "</div></article>";
+  }
+
+  function compHtml(key, ph, label) {
+    return '<div class="comp"><textarea rows="2" data-draft="' + key + '" placeholder="' + ph + '">' +
+      esc(ui.draft[key] || "") + '</textarea><div class="comp-b">' +
+      '<button class="send" data-act="post" data-list="' + key + '">' + (label || "書く") + "</button></div></div>";
+  }
+
+  function boardHtml(SEC) {
+    return SEC.map(function (s) {
+      var items = db[s.key];
+      var open = items.filter(function (x) { return !x.done; });
+      var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
+        '<h2 class="sec-t">' + esc(s.title) + '</h2><span class="sec-n">' + open.length + "件</span></div>" +
+        '<p class="sec-d">' + s.desc + "</p>";
+      h += ui.role === s.writer ? compHtml(s.key, s.ph) : '<p class="empty">' + esc(s.locked) + "</p>";
+      if (!items.length) h += '<p class="empty">まだ何もありません。</p>';
+      else {
+        h += '<div class="list">';
+        items.forEach(function (it) {
+          h += itemHtml(s.key, it, {
+            own: it.author === ui.role,
+            canReply: it.author !== ui.role,
+            canMark: s.marker === ui.role,
+            showAuthor: false
+          });
+        });
+        h += "</div>";
+      }
+      return h + "</section>";
+    }).join("");
+  }
+
+  function fieldHtml(stale, cold) {
+    var h = "";
+    if (stale.length || cold.length) {
+      h += '<div class="alert"><div class="alert-h">止まっているもの</div><ul>';
+      stale.forEach(function (c) { h += "<li>" + esc(c.title) + "（" + ago(c.updatedAt) + "から動いていない）</li>"; });
+      cold.forEach(function (s) { h += "<li>" + esc(s.name) + "（" + ago(s.followedAt) + "から話せていない）</li>"; });
+      h += "</ul></div>";
+    }
+
+    h += '<div class="pick"><select id="pickSel"><option value="">すべての施設</option>';
+    db.facilities.forEach(function (f) {
+      h += '<option value="' + f.id + '"' + (ui.pick === f.id ? " selected" : "") + ">" + esc(f.name) + "</option>";
+    });
+    h += '</select><button data-act="editlist">' + (ui.editList ? "リストを閉じる" : "施設リスト") + "</button></div>";
+
+    if (ui.editList) {
+      h += '<div class="panel"><h3>施設リスト</h3>' +
+        "<p>ここに登録した施設が、上の選択と案件・スタッフの選択肢になります。普段は閉じておけます。</p>";
+      db.facilities.forEach(function (f) {
+        h += '<div class="pline"><input value="' + esc(f.name) + '" data-list="facilities" data-id="' + f.id +
+          '" data-field="name" placeholder="施設名">' +
+          '<button data-act="del" data-list="facilities" data-id="' + f.id + '">削除</button></div>';
+      });
+      h += addHtml("facilities", "施設を追加", "施設名") + "</div>";
+    }
+
+    var shown = db.facilities.filter(function (f) { return !ui.pick || f.id === ui.pick; });
+    if (!db.facilities.length) h += '<p class="empty">「施設リスト」を開いて施設を登録してください。</p>';
+
+    shown.forEach(function (f) {
+      var key = "fac:" + f.id;
+      h += '<div class="fac"><div class="fac-h">' +
+        '<button class="dot" style="background:' + STATUS[f.status] + '" data-act="cycle" data-id="' + f.id + '"></button>' +
+        '<span class="fac-n">' + esc(f.name) + '</span><span class="fac-d">' + ago(f.updatedAt) + "</span></div>";
+      if ((f.items || []).length) {
+        h += '<div class="list">';
+        f.items.forEach(function (it) {
+          h += itemHtml(key, it, { own: true, canReply: it.author !== ui.role, canMark: false, showAuthor: true });
+        });
+        h += "</div>";
+      }
+      h += compHtml(key, "この施設のことを書き足す", "足す") + "</div>";
+    });
+
+    var match = function (x) { return !ui.pick || x.place === ui.pick; };
+
+    var open = db.cases.filter(function (c) { return !c.done && match(c); });
+    var done = db.cases.filter(function (c) { return c.done; });
+    h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">対応中の案件</h2>' +
+      '<span class="sec-n">' + open.length + "件</span></div>" +
+      '<p class="sec-d">7日動かないと上の「止まっているもの」に出ます。手を打ったら「動いた」を押してください。</p>';
+    if (!open.length) h += '<p class="empty">対応中の案件はありません。</p>';
+    open.forEach(function (c) {
+      var st = now() - c.updatedAt > 7 * DAY;
+      h += '<div class="row' + (st ? " stale" : "") + '"><div class="row-h">' +
+        '<span class="row-n">' + esc(c.title) + "</span>" +
+        (st ? '<span class="flag">止まっている</span>' : "") +
+        '<span class="row-d">' + ago(c.updatedAt) + "</span></div>" +
+        (c.place ? '<div class="tag">' + esc(facName(c.place)) + "</div>" : "") +
+        '<input class="inline" data-list="cases" data-id="' + c.id + '" data-field="next" value="' +
+        esc(c.next) + '" placeholder="次にすること">' +
+        '<div class="acts"><button data-act="bump" data-id="' + c.id + '">動いた</button>' +
+        '<button data-act="finish" data-id="' + c.id + '">完了</button>' +
+        '<button class="del" data-act="del" data-list="cases" data-id="' + c.id + '">削除</button></div></div>';
+    });
+    h += addHtml("cases", "案件を追加", "案件名");
+    if (done.length) h += '<p class="empty">完了した案件 ' + done.length +
+      '件<button style="background:none;border:0;color:var(--ink2);font-size:12px;margin-left:8px" data-act="clearDone">まとめて消す</button></p>';
+    h += "</section>";
+
+    var staff = db.staff.filter(match);
+    h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">スタッフで気になること</h2>' +
+      '<span class="sec-n">' + staff.length + "人</span></div>" +
+      '<p class="sec-d">14日話せていない人は上に出ます。声をかけたら「話した」を押してください。</p>';
+    if (!staff.length) h += '<p class="empty">気になっている人を書いておくと、放置に気づけます。</p>';
+    staff.forEach(function (p) {
+      var isCold = now() - (p.followedAt || 0) > 14 * DAY;
+      h += '<div class="row' + (isCold ? " stale" : "") + '"><div class="row-h">' +
+        '<span class="row-n">' + esc(p.name) + "</span>" +
+        (isCold ? '<span class="flag">フォロー切れ</span>' : "") +
+        '<span class="row-d">' + ago(p.followedAt) + "</span></div>" +
+        (p.place ? '<div class="tag">' + esc(facName(p.place)) + "</div>" : "") +
+        '<input class="inline" data-list="staff" data-id="' + p.id + '" data-field="concern" value="' +
+        esc(p.concern) + '" placeholder="気になっていること">' +
+        '<div class="acts"><button data-act="talked" data-id="' + p.id + '">話した</button>' +
+        '<button class="del" data-act="del" data-list="staff" data-id="' + p.id + '">削除</button></div></div>';
+    });
+    return h + addHtml("staff", "スタッフを追加", "スタッフ名") + "</section>";
+  }
+
+  function addHtml(list, label, ph) {
+    if (ui.addOpen !== list) return '<button class="add" data-act="addopen" data-list="' + list + '">＋ ' + label + "</button>";
+    var h = '<div class="rin"><input id="addInput" value="' + esc(ui.addDraft) + '" placeholder="' + ph + '">';
+    if (list !== "facilities" && db.facilities.length) {
+      h += '<select id="addPlace" style="font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:3px;background:var(--surface);padding:0 4px">' +
+        '<option value="">施設なし</option>';
+      db.facilities.forEach(function (f) {
+        var sel = (ui.addPlace || ui.pick) === f.id ? " selected" : "";
+        h += '<option value="' + f.id + '"' + sel + ">" + esc(f.name) + "</option>";
+      });
+      h += "</select>";
+    }
+    return h + '<button class="send plain" data-act="addsend" data-list="' + list + '">追加</button></div>';
+  }
+
+  /* ---------- 操作 ---------- */
+
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("[data-act]") : null;
+    if (!b) return;
+    var act = b.getAttribute("data-act"), list = b.getAttribute("data-list"),
+        id = b.getAttribute("data-id"), v = b.getAttribute("data-v"), it;
+
+    if (act === "login") {
+      var m = document.querySelector("#mail"), w = document.querySelector("#pw");
+      ui.gateErr = "";
+      auth.signInWithEmailAndPassword((m ? m.value : "").trim(), w ? w.value : "")
+        .catch(function (err) {
+          ui.gateErr = err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" ||
+            err.code === "auth/user-not-found"
+            ? "メールアドレスかパスワードが違います。" : "開けませんでした（" + err.code + "）";
+          render();
+        });
+      return;
+    }
+    if (act === "forgot") {
+      var m2 = document.querySelector("#mail");
+      var addr = (m2 ? m2.value : "").trim();
+      if (!addr) { ui.gateErr = "先にメールアドレスを入れてください。"; render(); return; }
+      auth.sendPasswordResetEmail(addr)
+        .then(function () { ui.gateErr = "再設定のメールを送りました。"; render(); })
+        .catch(function (err) { ui.gateErr = "送れませんでした（" + err.code + "）"; render(); });
+      return;
+    }
+
+    captureDrafts();
+
+    if (act === "tab") ui.tab = v;
+    else if (act === "settings") ui.settings = !ui.settings;
+    else if (act === "logout") { auth.signOut(); return; }
+    else if (act === "member") {
+      var cur = members[id] || {};
+      var next = cur.active === false;
+      if (!next && !confirm((cur.mail || id) + " をこのボードから締め出します。よろしいですか？")) return;
+      rtdb.ref("members/" + id + "/active").set(next).catch(function (err) {
+        alert("変更できませんでした（" + err.code + "）");
+      });
+      return;
+    }
+    else if (act === "post") {
+      var t = (ui.draft[list] || "").trim(); if (!t) return;
+      var sec = sections().filter(function (x) { return x.key === list; })[0];
+      arrFor(list).unshift({ id: uid(), text: t, author: sec ? sec.voice : ui.role,
+        createdAt: now(), seen: false, done: false, replies: [] });
+      if (list.indexOf("fac:") === 0) { var f0 = fac(list.slice(4)); if (f0) f0.updatedAt = now(); }
+      ui.draft[list] = ""; save();
+    }
+    else if (act === "seen") { it = find(list, id); if (it) it.seen = true; save(); }
+    else if (act === "reply") { ui.replyOpen = ui.replyOpen === id ? null : id; ui.replyDraft = ""; }
+    else if (act === "rsend") {
+      var rv = (ui.replyDraft || "").trim(); if (!rv) return;
+      it = find(list, id); if (!it) return;
+      it.replies = it.replies || [];
+      it.replies.push({ id: uid(), text: rv, author: ui.role, createdAt: now() });
+      it.seen = true; ui.replyOpen = null; ui.replyDraft = ""; save();
+    }
+    else if (act === "del") {
+      var target = find(list, id);
+      var label = target ? (target.text || target.name || target.title || "") : "";
+      if (label.length > 24) label = label.slice(0, 24) + "…";
+      if (!confirm("「" + label + "」を削除します。元に戻せません。よろしいですか？")) return;
+      setArr(list, arrFor(list).filter(function (x) { return x.id !== id; }));
+      if (list === "facilities" && ui.pick === id) ui.pick = "";
+      save();
+    }
+    else if (act === "cycle") { it = fac(id); it.status = NEXT[it.status]; it.updatedAt = now(); save(); }
+    else if (act === "bump") { it = find("cases", id); it.updatedAt = now(); save(); }
+    else if (act === "finish") { it = find("cases", id); it.done = true; it.updatedAt = now(); save(); }
+    else if (act === "talked") { it = find("staff", id); it.followedAt = now(); save(); }
+    else if (act === "clearDone") { db.cases = db.cases.filter(function (c) { return !c.done; }); save(); }
+    else if (act === "editlist") ui.editList = !ui.editList;
+    else if (act === "addopen") { ui.addOpen = list; ui.addDraft = ""; ui.addPlace = ui.pick || ""; }
+    else if (act === "addsend") {
+      var av = (ui.addDraft || "").trim(); if (!av) return;
+      if (list === "facilities") db.facilities.push({ id: uid(), name: av, status: "green", items: [], updatedAt: now() });
+      if (list === "cases") db.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "", next: "",
+        createdAt: now(), updatedAt: now(), done: false });
+      if (list === "staff") db.staff.push({ id: uid(), name: av, place: ui.addPlace || "", concern: "", followedAt: now() });
+      ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; save();
+    }
+    else if (act === "reset") {
+      if (!confirm("すべての内容を消して最初からにします。よろしいですか？")) return;
+      var keep = cfg();
+      db = JSON.parse(JSON.stringify(EMPTY)); db.config = keep; save();
+    }
+    render();
+  });
+
+  document.addEventListener("change", function (e) {
+    var i = e.target;
+    if (i.id === "pickSel") { captureDrafts(); ui.pick = i.value; render(); return; }
+    if (i.id === "addPlace") { ui.addPlace = i.value; return; }
+    if (i.hasAttribute && i.hasAttribute("data-cfg")) {
+      cfg()[i.getAttribute("data-cfg")] = i.value.trim();
+      save(); render(); return;
+    }
+    if (!i.hasAttribute || !i.hasAttribute("data-field")) return;
+    var o = find(i.getAttribute("data-list"), i.getAttribute("data-id"));
+    if (!o) return;
+    o[i.getAttribute("data-field")] = i.value;
+    save();
+    if (i.getAttribute("data-field") === "name") render();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    if (e.target.id === "mail" || e.target.id === "pw") {
+      e.preventDefault();
+      var ub = document.querySelector('button[data-act="login"]'); if (ub) ub.click();
+      return;
+    }
+    if (e.target.id === "replyInput" || e.target.id === "addInput") {
+      e.preventDefault();
+      captureDrafts();
+      var btn = e.target.parentNode.querySelector('button[data-act="rsend"], button[data-act="addsend"]');
+      if (btn) btn.click();
+    }
+  });
+
+  /* ドラッグで並べ替え */
+  var drag = null;
+  document.addEventListener("pointerdown", function (e) {
+    var g = e.target.closest ? e.target.closest("[data-grip]") : null;
+    if (!g) return;
+    var item = g.closest(".item"); if (!item) return;
+    e.preventDefault();
+    captureDrafts();
+    drag = { item: item, box: item.parentNode, list: item.getAttribute("data-list") };
+    item.classList.add("dragging");
+    document.body.style.userSelect = "none";
+    try { g.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  document.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    e.preventDefault();
+    var kids = Array.prototype.slice.call(drag.box.children);
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (el === drag.item) continue;
+      var r = el.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) {
+        if (el.previousSibling !== drag.item) drag.box.insertBefore(drag.item, el);
+        return;
+      }
+    }
+    if (drag.box.lastChild !== drag.item) drag.box.appendChild(drag.item);
+  });
+  function endDrag() {
+    if (!drag) return;
+    var ids = Array.prototype.slice.call(drag.box.children).map(function (el) { return el.getAttribute("data-id"); });
+    var arr = arrFor(drag.list);
+    setArr(drag.list, ids.map(function (id) {
+      return arr.filter(function (x) { return x.id === id; })[0];
+    }).filter(Boolean));
+    drag.item.classList.remove("dragging");
+    drag = null;
+    document.body.style.userSelect = "";
+    save(); render();
+  }
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+
+  /* ---------- 起動 ---------- */
+
+  auth.onAuthStateChanged(function (u) {
+    if (!u) { me = null; ui.role = null; members = {}; render(); return; }
+    rtdb.ref("members/" + u.uid).on("value", function (snap) {
+      var m = snap.val();
+      if (!m || m.active === false) {
+        me = null; ui.role = null;
+        ui.gateErr = "このアカウントは今このボードを見られません。";
+        auth.signOut();
+        render();
+        return;
+      }
+      me = { uid: u.uid, role: m.role === "ceo" ? "ceo" : "mgr", mail: u.email };
+      ui.role = me.role;
+      rtdb.ref("board").on("value", function (s2) { db = normalize(s2.val()); render(); });
+      if (me.role === "ceo")
+        rtdb.ref("members").on("value", function (s3) { members = s3.val() || {}; render(); });
+      render();
+    }, function () {
+      ui.gateErr = "このアカウントは今このボードを見られません。";
+      auth.signOut(); render();
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "honomi": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "tc5_records": {
+        ".indexOn": [
+          "date"
+        ]
+      }
+    },
+    "board": {
+      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true",
+      ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true"
+    },
+    "members": {
+      ".read": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+        ".validate": "newData.hasChildren(['role','active'])",
+        "role": {
+          ".validate": "newData.val() === 'ceo' || newData.val() === 'mgr'"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "mail": {
+          ".validate": "newData.isString()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

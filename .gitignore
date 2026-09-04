@@ -1,0 +1,7 @@
+# サービスアカウント鍵は絶対にコミットしない
+*firebase-adminsdk*.json
+serviceAccount*.json
+.env
+.env.*
+node_modules/
+.firebase/
