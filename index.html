@@ -241,17 +241,29 @@ var FIREBASE_CONFIG = {
                      : (boss ? boss + "への相談" : "相談");
     var guide  = ceo ? (you ? you + "への指針" : "指針")
                      : (boss ? boss + "からの指針" : "指針");
+    /* 各欄の書き手は片側だけ（voice が書き手）。もう片方は読んで「見た」とコメントで返す。
+       書けない側には、誰が書く場所なのかを出す。 */
+    var lockedByBoss = function (tail) {
+      return (boss || "社長") + "が書く場所です。" + tail;
+    };
+    var lockedByYou = function (tail) {
+      return you ? you + "が書く場所です。" + tail
+                 : "この部屋にはまだ相手がいません。設定から相手を入れてください。";
+    };
+    var READ = "目を通したら「見た」を押してください。";
     return [
       { key: "ceoMind", voice: "ceo", title: vision,
-        desc: "", locked: "",
-        ph: "いま頭にあることを、まとまっていなくても書く", ceoOnly: true },
+        desc: "", locked: lockedByBoss("読んで、気になったらコメントしてください。"),
+        ph: "いま頭にあることを、まとまっていなくても書く" },
       { key: "toCeo", voice: "mgr", title: report,
-        desc: "", locked: "", ph: "現場で見えたこと、気づいたことを書く", ceoOnly: false },
+        desc: "", locked: lockedByYou(READ),
+        ph: "現場で見えたこと、気づいたことを書く" },
       { key: "mgrAsk", voice: "mgr", title: ask,
-        desc: "", locked: "", ph: "相談したいこと・提案を書く", ceoOnly: false },
+        desc: "", locked: lockedByYou(READ),
+        ph: "相談したいこと・提案を書く" },
       { key: "toManager", voice: "ceo", title: guide,
-        desc: "", locked: "",
-        ph: "考え方・判断・伝えておきたいことを書く", ceoOnly: true }
+        desc: "", locked: lockedByBoss(READ),
+        ph: "考え方・判断・伝えておきたいことを書く" }
     ];
   }
 
@@ -509,8 +521,10 @@ var FIREBASE_CONFIG = {
       var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
         '<h2 class="sec-t">' + esc(s.title) + '</h2><span class="sec-n">' + open.length + "件</span></div>" +
         (s.desc ? '<p class="sec-d">' + esc(s.desc) + "</p>" : "");
-      var canWrite = s.ceoOnly ? isCeo() : true;
-      if (canWrite) h += compHtml(s.key, s.ph);
+      /* voice が "ceo" の欄は社長が、"mgr" の欄は現場側が書く */
+      var canWrite = (s.voice === "ceo") === isCeo();
+      h += canWrite ? compHtml(s.key, s.ph)
+                    : '<p class="empty">' + esc(s.locked) + "</p>";
       if (items.length) {
         h += '<div class="list">';
         items.forEach(function (it) { h += itemHtml(s.key, it, { anyDelete: isCeo() }); });
