@@ -5,4 +5,8 @@ serviceAccount*.json
 .env.*
 node_modules/
 .firebase/
+
+# GitHub Pages はリポジトリ直下を丸ごと配信するため、
+# 旧版 HTML をコミットすると本番URLから閲覧できてしまう。必ず除外する。
+_old/
 _backup_*/
