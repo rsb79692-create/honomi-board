@@ -245,7 +245,8 @@ var FIREBASE_CONFIG = {
     var READ = "目を通したら「見た」を押してください。";
     return [
       { key: "ceoMind", voice: "ceo", title: vision,
-        desc: "", locked: lockedByBoss(READ), noReply: true,
+        desc: "", locked: (boss || "社長") + "が書く場所です。読むだけの欄です。",
+        noReply: true, noSeen: true,
         ph: "いま頭にあることを、まとまっていなくても書く" },
       { key: "toManager", voice: "ceo", title: guide,
         desc: "", locked: lockedByBoss(READ),
@@ -350,6 +351,7 @@ var FIREBASE_CONFIG = {
     var b = board();
     var unread = 0;
     SEC.forEach(function (sc) {
+      if (sc.noSeen) return;   /* 「見た」を押せない欄は数えない（消せなくなるため） */
       unread += (b[sc.key] || []).filter(function (x) {
         return !x.done && !(x.seenBy && x.seenBy[me.uid]) && x.by !== me.uid;
       }).length;
@@ -485,7 +487,7 @@ var FIREBASE_CONFIG = {
     }
 
     h += '</div><div class="side">';
-    if (!mine && !(it.seenBy && it.seenBy[me.uid]))
+    if (!mine && !opts.noSeen && !(it.seenBy && it.seenBy[me.uid]))
       h += '<button data-act="seen" data-list="' + key + '" data-id="' + it.id + '">見た</button>';
     if (!mine && !opts.noReply)
       h += '<button data-act="reply" data-id="' + it.id + '">コメント</button>';
@@ -515,7 +517,9 @@ var FIREBASE_CONFIG = {
       if (items.length) {
         h += '<div class="list">';
         items.forEach(function (it) {
-          h += itemHtml(s.key, it, { anyDelete: isCeo(), noReply: !!s.noReply });
+          h += itemHtml(s.key, it, {
+            anyDelete: isCeo(), noReply: !!s.noReply, noSeen: !!s.noSeen
+          });
         });
         h += "</div>";
       }
