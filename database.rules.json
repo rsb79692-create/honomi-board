@@ -12,7 +12,7 @@
     "members": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true",
       "$uid": {
-        ".write": "auth != null && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || (auth.uid === $uid && !data.exists()))",
+        ".write": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
         "role": {
           ".validate": "newData.val() === 'ceo' || newData.val() === 'mgr'"
         },
@@ -32,7 +32,8 @@
         },
         "$other": {
           ".validate": false
-        }
+        },
+        ".validate": "newData.hasChildren(['role','active'])"
       }
     },
     "config": {
