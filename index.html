@@ -194,7 +194,7 @@ var FIREBASE_CONFIG = {
   var members = {};              /* uid -> {name, mail, role, active} */
   var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
   var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
-  var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {};
+  var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {}, failMsg = "";
 
   var ui = { tab: "board", room: "", saving: "",
              newId: {}, confirmDel: "", fresh: {}, focusAdd: false,
@@ -342,7 +342,8 @@ var FIREBASE_CONFIG = {
     clearTimeout(saveTimers[k]);
     return p.fn().then(function () {
       delete failed[k];
-      ui.saving = Object.keys(failed).length ? ui.saving : "保存済み";
+      /* まだ直っていない欄があるなら、そちらの失敗表示を出し続ける */
+      ui.saving = Object.keys(failed).length ? failMsg : "保存済み";
       paintStatus();
       /* その欄の保存が届いたら、入力中の上書き表示は役目を終える。
          失敗したときは解除しない（打った文字を画面に残すため） */
@@ -350,7 +351,8 @@ var FIREBASE_CONFIG = {
     }).catch(function (e) {
       /* 失敗の表示は、その欄が保存できるようになるまで消さない */
       failed[k] = true;
-      ui.saving = "保存できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
+      failMsg = "保存できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
+      ui.saving = failMsg;
       paintStatus();
     });
   }
@@ -863,6 +865,7 @@ var FIREBASE_CONFIG = {
     else if (act === "tab") ui.tab = v;
     else if (act === "room") {
       flushSaves();                       /* 前の部屋の保存を先に出しきる */
+      failed = {}; failMsg = "";           /* 前の部屋の失敗表示は持ち越さない */
       ui.room = id; ui.confirmDel = ""; edit = null; ui.newId = {}; ui.fresh = {};
     }
     else if (act === "settings") ui.settings = !ui.settings;
@@ -1150,7 +1153,7 @@ var FIREBASE_CONFIG = {
   }
   /* pointerup を取りこぼしても、待たせた描き直しが残らないようにする */
   setInterval(function () {
-    if (!me) { pendingRender = false; return; }
+    if (!me) { if (pendingRender && !held()) render(); return; }
     if (pendingRender && !held() && !drag && !composing()) render();
   }, 1000);
   document.addEventListener("pointerup", released, true);
@@ -1177,6 +1180,7 @@ var FIREBASE_CONFIG = {
   }
 
   auth.onAuthStateChanged(function (u) {
+    ui.saving = ""; failed = {}; failMsg = "";
     if (!u) { me = null; members = {}; unwatchAll(); render(); return; }
     rtdb.ref("members/" + u.uid).on("value", function (snap) {
       var m = snap.val();
