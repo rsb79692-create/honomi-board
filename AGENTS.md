@@ -40,11 +40,25 @@ honomi-board は技術構成タイプ **Type C（Firebase + GitHub Pages）**。
 | `mgrAsk` | 「〇〇への相談」 | **出さない** | — |
 
 ⚠ `toCeo` / `mgrAsk` は画面から外しただけで**データは消していない**（本番の `toCeo` に実データあり）。
-`normBoard` が4キーを常に配列で保持し、`saveBoard` は board 全体を `set()` するため、
-**この2キーを保持し続けないと保存のたびに消える**。
+`saveBoard` は `rooms/{rid}/board/{key}` と**欄ごとに** `set()` するので、この2キーは書き込みパスに現れず
+構造的に壊せない。`board` を丸ごと `set()` する書き方へ戻すと、この2キーを巻き添えにする。
 
 別タブに「現場マネジメント」（`field`: 施設・スタッフ・案件）があり、これは**部屋をまたいで全員共通**。
 施設メモもノート形式で、**書き足しは全員、人が書いた行を直す・消せるのは本人と社長だけ**。
+
+### 閲覧リンク（`view.html`・2026-09-05 追加）
+
+利用者ごとに**専用の閲覧URL**を発行できる。ログイン不要で、その人向けの内容だけを読める。
+
+```
+https://rsb79692-create.github.io/honomi-board/view.html#<32文字のあいことば>
+```
+
+- 社長の設定画面「利用者」の各行から、発行／コピー／作り直す／やめる ができる
+- 見せるのは**その人がいる部屋のビジョンと指針の本文だけ**。UID・メールアドレス・他の人・
+  その人がいない部屋・画面に出していない `toCeo` / `mgrAsk` ・`field` は入れない
+- 閲覧ページは**書き込みのコードを持たず**、`firebase-auth` も読み込まない
+- 現場側の利用者のログインは今までどおり（撤去していない）。閲覧リンクはその部分集合
 
 - 本番URL: https://rsb79692-create.github.io/honomi-board/
 - リポジトリ: https://github.com/rsb79692-create/honomi-board （GitHub Pages / main / ルート配信）
@@ -59,6 +73,7 @@ Firebase は CDN の compat SDK を script タグで読む（`firebase-app` / `f
 ```
 honomi-board/
 ├── index.html            ← アプリ本体。これが本番そのもの
+├── view.html             ← 閲覧専用ページ（ログイン不要・読むだけ）
 ├── database.rules.json   ← RTDB のアクセスルール（timecard と共有・後述）
 ├── firebase.json         ← database.rules.json を指すだけ
 ├── .firebaserc           ← default: honomi-timecard
@@ -83,6 +98,7 @@ honomi-board/
 |---|---|
 | `honomi` | **timecard 専用**（`tc5_records` に `.indexOn: ["date"]`。実データ4400件超） |
 | `rooms` / `members` / `config` / `field` | ボード |
+| `views` / `viewLinks` | ボード（閲覧リンク・2026-09-05 追加）。**マージ時に落とすと全員の閲覧リンクが死ぬ** |
 | `mileage` / `authz` / `ratelimit` | ルール未定義＝クライアントからは不可視。Admin SDK 経由で使用 |
 
 `firebase deploy --only database` は**ルール全体を置換する**。ボード側だけをデプロイすると timecard が即死する。
@@ -112,6 +128,11 @@ rooms/{rid}   = { name, members:{uid:true}, board:{ ceoMind, toCeo, mgrAsk, toMa
 members/{uid} = { name, mail, role:"ceo"|"mgr", active, rooms:{rid:true} }
 config/ceoName
 field/{ facilities, staff, cases }
+
+viewLinks/{uid}  = { token, createdAt }        ← 台帳。社長だけが読み書きできる
+views/{token}    = { uid, who, updatedAt,      ← 見せてよい中身の写し（平文テキストのみ）
+                                                  uid はルールが失効を判定するために必須
+                     rooms:[{ name, secs:[{ title, items:[本文,…] }] }] }
 ```
 
 - 旧形式の `author:"ceo"/"mgr"` は `by:<UID>`、`seen:true` は `seenBy:{相手UID:true}` へ変換済み。
@@ -123,8 +144,48 @@ field/{ facilities, staff, cases }
 ## アクセス制御
 
 アプリはログイン後 `members/{uid}` を購読し、**レコードが無いか `active === false` なら自動 signOut** する。
-- **締め出しは `active` を false にするだけ**（アカウント削除やパスワード変更は不要）
+- **締め出しは `active` を false にするだけ**（アカウント削除やパスワード変更は不要）。
+  閲覧リンクもルール条文が `active` を見ているので、**同時に読めなくなる**。
+  UI 側は念のため、先に `dropView()` で台帳と写しを消してから `active` を書く
 - 社長は `rooms` 全体を購読。mgr は `members/{uid}/rooms` に列挙された部屋だけを個別購読する
+
+### 閲覧リンクの認可（サーバーが無い作りでどう絞るか）
+
+GitHub Pages の静的配信なので、**サーバー側で「読んでよい人か」を判定する場所が無い**。
+RTDB のルールは「読もうとしているパス」しか判定材料にできず、
+「あいことばを知っているから `rooms/xxx` を読ませる」という条件は**書けない**。
+
+そこで、見せてよい中身だけを `views/{あいことば}` へ写し、閲覧ページにはそこ1パスだけを読ませる。
+
+- `views` の `.read` は**社長だけ**。あいことばを知らない他人は**子を列挙できない**（1件も取れない）
+- ⚠⚠ **`views/$token` の `.read` を `true` にしてはいけない。** 失効がクライアント任せになる。
+  実際の条文は「**台帳が今もこのあいことばを指していて、その人が `active` である**」:
+
+  ```
+  data.child('uid').exists()
+  && root.child('viewLinks').child(data.child('uid').val()).child('token').val() === $token
+  && root.child('members').child(data.child('uid').val()).child('active').val() === true
+  ```
+
+  これにより、写しを消し損ねても・回線が切れても、**台帳を消すか `active` を false にした時点で読めなくなる**。
+  そのために写しへ本人の `uid` を入れている（見るのは本人なので露出しても実害はない）。
+  失効すると読み取りが拒否されるので、`view.html` は `PERMISSION_DENIED` を
+  「このリンクは使えません」として案内する（通信不良と区別する）
+- `.write` は社長のみ。`.validate` で形（`uid` / `updatedAt` / `rooms` 必須、余分な子は不可）を縛る
+- ⚠ 社長に `views` の `.read` を与えているのは**置き土産を片づけるため**。
+  写しは token を知らないと読めないので、台帳から外れた写しは社長からも見えないと誰も消せない。
+  入り直したときに1回だけ `sweepViews()` が `viewLinks` に無い写しを消す
+- **見せる部屋が無くなったら写しごと消す。** 名前だけの写しを残すと、氏名が読めたままになる
+- **画面を離れる前に `flushViews()` で予約中の更新を出しきる。**
+  取りこぼすと「消したはずの行」が閲覧リンク側に残る
+- あいことばは `crypto.getRandomValues` の24バイト（192ビット）を base64url にした32文字。
+  連番・氏名・メールアドレス・UID は使わない
+- ⚠ **台帳を `members/{uid}` に置いてはいけない。** `members` は全 active 利用者が読めるので、
+  他人のあいことばを読んで他人の閲覧ページを開けてしまう。`viewLinks`（社長だけ）へ置くこと
+- あいことばは URL の **`#` のあと**に置く。`#` から先はサーバーにもリファラにも送られない。
+  `?query` やパスにすると GitHub のアクセスログに残る
+- 写しは社長のブラウザが書く。中身が変わったときだけ書き、社長がアプリを開き直すと追いつく
+- 失効は写しを消すこと（`views/{token}` を削除）。作り直す・やめる・利用者を止める、のいずれでも消える
 
 ### ルール設計で踏んだ罠（本番で再現確認済み・繰り返さないこと）
 
@@ -166,7 +227,8 @@ timecard が匿名認証を使っており無効化できないので、条件�
 
 npm script は無い。型チェック・build・lint・Playwright・Jest はいずれも使わない。
 
-- **構文チェック**: `node --check` は HTML には使えない。`<script>` の中身を切り出して `node --check` する
+- **構文チェック**: `node --check` は HTML には使えない。`<script>` の中身を切り出して `node --check` する。
+  **`index.html` と `view.html` の両方**が対象（`view.html` を忘れやすい）
 - **JSON 検証**: `database.rules.json`
 - **本番データに触らない機能確認**: `index.html` の CDN Firebase を、メモリ上の偽実装
   （`initializeApp` / `auth` / `database.ref().on|set|update`）へ差し替えたページを作り、
@@ -208,7 +270,34 @@ npm script は無い。型チェック・build・lint・Playwright・Jest はい
 - **入力中（IME 変換中）に再描画してはいけない。** `composing` の間は `pendingRender` に退避し、
   `compositionend` で描く。末尾の空欄が実体化するときも再描画せず `promoteRow()` で DOM を直接作り替える
 
+- **`view.html` であいことばを URL から消してはいけない。** `history.replaceState` で `#` を消すと
+  見た目は安全になるが、**開き直し・ブックマーク・引っぱって更新で読めなくなる**。
+  端末に控えを残す作りにすると、共有の端末で次の人に残る。URL に置いたままにする
+- **あいことばをパスへ連結する前に必ず形を確かめる**（`/^[A-Za-z0-9_-]{22,64}$/`。
+  `view.html` と `database.rules.json` の両方で同じ形に揃えること）。
+  緩めるとスラッシュや `..` を混ぜて別のパスを読みにいける
+- **同じ URL でフラグメントだけ変えても、ブラウザはページを読み込み直さない。**
+  検証で別のあいことばを試すときは、クエリを変えるなどして必ず読み込み直させること
+
+### 閲覧リンクで受け入れているリスク（欠陥ではなく設計上の判断）
+
+- ⚠ **失効させる操作は「作り直す」「リンクを止める」「利用者を止める」の3つだけ。**
+  部屋から外しても台帳（`viewLinks`）は残る。写しは消えるので一時的に読めなくなるが、
+  **部屋へ入れ直すと同じURLがまた読めるようになる**。渡したURLを本当に無効にしたいときは
+  必ず「リンクを止める」か「作り直す」を押すこと（画面にもその旨を出している）
+- ⚠ **台帳から外れた写しを掃除するときは、写しを先に、台帳をあとに読む。**
+  逆にすると、読んでいる間に別のタブで作られたリンクの写しを消してしまう
+- **URL を知っている人は誰でも読める。** 転送・スクショ・端末の紛失で漏れる。
+  **有効期限は設けていない**（恒久的な閲覧手段のため）。**漏れたことを検知する手段も無い**。
+  失効は社長が「作り直す」「やめる」「止める」を押したときだけ
+- `FIREBASE_CONFIG` が `index.html` と `view.html` に二重にある（ビルドが無いため）。
+  プロジェクトを移すときは**両方**直すこと
+
 ## 既知の未解決事項（今回の変更範囲外）
+
+- ⚠ **写しを書くのは社長のブラウザだけ。** `rooms/$rid/board` の `.write` は今も「社長 **または** その部屋の
+  メンバー」なので、mgr が REST で board を書き換えても `views/{token}` は追いつかない
+  （社長が次にアプリを開いて保存するまで古いまま）。board の `.write` を社長限定にすれば消える問題
 
 - ⚠ **「現場側は読むだけ」は UI 層だけの担保。** `database.rules.json` の `rooms/$rid/board` は
   「社長 **または** その部屋のメンバー」に書き込みを許しているため、mgr は devtools や REST から

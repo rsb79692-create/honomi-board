@@ -97,6 +97,8 @@
   .rin input { flex:1; min-width:0; border:1px solid var(--line); border-radius:3px; padding:8px 9px; font-size:16px;
     font-family:inherit; background:var(--surface); color:var(--ink); }
   @media (max-width:480px) {
+    .vline { gap:12px; }
+    .vline button { min-height:44px; padding:0 14px; }
     .grip { width:44px; }
     .bx { min-width:44px; height:44px; margin-top:4px; }
     .ask { padding-left:44px; gap:18px; }
@@ -157,6 +159,16 @@
   .acts .del { margin-left:auto; color:var(--ink3); font-weight:400; }
   .add { width:100%; margin-top:8px; padding:9px; border:1px dashed var(--line); border-radius:4px;
     background:transparent; font-size:13px; color:var(--ink2); font-weight:600; }
+  /* 利用者ごとの閲覧リンク */
+  .vline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:0 0 9px 0; }
+  .vline .pnote { flex:1 1 auto; min-width:0; font-size:12px; color:var(--ink2); }
+  .vline button { border:1px solid var(--line); background:var(--surface); border-radius:3px;
+    padding:6px 11px; font-size:12px; color:var(--ink2); }
+  .vline button.go { border-color:var(--ink); background:var(--ink); color:#fff; font-weight:600; }
+  .vline button.stop { color:var(--bad); }
+  .vurl { flex:1 1 100%; min-width:0; font-family:inherit; font-size:12px; padding:7px 8px;
+    border:1px solid var(--line); border-radius:3px; background:var(--surface); color:var(--ink2); }
+
   .foot { margin-top:26px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
   .foot button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; }
 </style>
@@ -195,12 +207,18 @@ var FIREBASE_CONFIG = {
   var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
   var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
   var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {}, failMsg = "";
+  /* 閲覧リンク（社長だけが扱う）
+       viewLinks/{uid} = {token, createdAt}  … だれにどのリンクを渡したかの台帳
+       views/{token}                          … その人に見せる中身の写し
+     viewSent は「最後に書いた中身」。同じものを何度も書かないための控え。 */
+  var viewLinks = {}, viewSent = {}, viewTimer = null, viewRef = null;
+  var gotRooms = false, gotMembers = false;   /* 部屋と名簿の初回が届いたか */
 
   var ui = { tab: "board", room: "", saving: "",
              newId: {}, confirmDel: "", fresh: {}, focusAdd: false,
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
              settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
-             invite: false, gateErr: "", msg: "" };
+             invite: false, gateErr: "", msg: "", showUrl: "" };
 
   /* 直接編集中の1行。DBの往復で入力中の文字が巻き戻らないように上書き表示する。 */
   var edit = null;              /* { pk, val, live } */
@@ -215,6 +233,8 @@ var FIREBASE_CONFIG = {
   function held() { return heldAt !== 0 && Date.now() - heldAt < 1000; }
 
   var isCeo = function () { return me && me.role === "ceo"; };
+  /* obj[key] は constructor などの継承分でも真になる。名簿の判定は必ずこれを通す。 */
+  function owns(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
   function nameOfUid(u) {
     if (me && u === me.uid) return me.name || "自分";
     var m = members[u];
@@ -348,6 +368,7 @@ var FIREBASE_CONFIG = {
       /* その欄の保存が届いたら、入力中の上書き表示は役目を終える。
          失敗したときは解除しない（打った文字を画面に残すため） */
       if (edit && !edit.live && edit.pk.split("|")[0] === p.owner) edit = null;
+      syncViewsSoon();                 /* 渡してあるリンクの中身も追いつかせる */
     }).catch(function (e) {
       /* 失敗の表示は、その欄が保存できるようになるまで消さない */
       failed[k] = true;
@@ -361,6 +382,173 @@ var FIREBASE_CONFIG = {
     return Promise.all(Object.keys(savePend).map(runSave).filter(Boolean));
   }
   function paintStatus() { var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || ""; }
+
+  /* ---------- 閲覧リンク ----------
+     このアプリはサーバーを持たない（GitHub Pages の静的配信）ので、
+     「読んでよい人か」をサーバーで判定できない。
+     そこで、見せてよい中身だけを views/{あいことば} へ写し、
+     閲覧ページにはそこ1か所だけを読ませる。
+     views は親に .read を置かないので、あいことばを知らない人は1件も取り出せない。
+     部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。 */
+
+  function newToken() {
+    var c = window.crypto || window.msCrypto;
+    if (!c || !c.getRandomValues) return "";    /* 当てられる乱数で作るくらいなら作らない */
+    var b = new Uint8Array(24);                 /* 192ビット。総当たりは不可能 */
+    c.getRandomValues(b);
+    var s = "";
+    for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  /* あいことばは # のあとに置く。# から先はサーバーにもリファラにも送られない。 */
+  function viewUrl(tk) {
+    return location.origin + location.pathname.replace(/[^\/]*$/, "") + "view.html#" + tk;
+  }
+  /* その部屋にいる社長の呼び名。見出しを閲覧者から見た向きにするために使う。 */
+  function bossLabel(rid, who) {
+    var r = rooms[rid] || {}, ns = [];
+    Object.keys(r.members || {}).forEach(function (u) {
+      if (u === who) return;
+      var m = members[u];
+      if (!m || m.role !== "ceo") return;
+      var n = m.name || conf.ceoName || "";
+      if (n) ns.push(n + "さん");
+    });
+    if (!ns.length && conf.ceoName) ns.push(conf.ceoName + "さん");
+    return ns.join("、");
+  }
+  /* 見せてよいものだけを組み立てる。
+     UID・メールアドレス・他の人・その人がいない部屋・画面に出していない欄は入れない。 */
+  function viewPayload(who) {
+    var m = owns(members, who) ? members[who] : {};
+    /* uid はルールが「台帳が今もこの写しを指しているか」を確かめるために使う。
+       見るのは本人なので、本人の uid が入っていて困ることはない。 */
+    var out = { uid: who, who: m.name || "", rooms: [] };
+    myRooms().forEach(function (rid) {
+      var r = rooms[rid];
+      if (!r || !owns(r.members, who) || r.members[who] !== true) return;   /* その人がいる部屋だけ */
+      var boss = bossLabel(rid, who), b = r.board || {};
+      var secs = [
+        { key: "ceoMind",   title: boss ? boss + "のビジョン" : "ビジョン" },
+        { key: "toManager", title: boss ? boss + "からの指針" : "指針" }
+      ].map(function (x) {
+        return {
+          title: x.title,
+          items: toArr(b[x.key])
+            .map(function (it) { return String((it && it.text) || ""); })
+            .filter(function (t) { return t.trim() !== ""; })
+        };
+      });
+      out.rooms.push({ name: r.name || "", secs: secs });
+    });
+    return out;
+  }
+  /* 中身が変わったときだけ書く（同じ内容を何度も送らない） */
+  function syncViews() {
+    /* 名簿と部屋が届く前に書くと、中身の無い写しを配って
+       「使えません」と誤って見せてしまう。揃うまで待つ。 */
+    if (!isCeo() || !gotRooms || !gotMembers) return Promise.resolve();
+    var live = {}, jobs = [];
+    Object.keys(viewLinks).forEach(function (u) {
+      var tk = viewLinks[u] && viewLinks[u].token;
+      if (!tk) return;
+      /* 止めた人・名簿から消えた人へは配らない。台帳が残っていたらその場で消す。 */
+      var m = members[u];
+      if (!m || m.active === false) { jobs.push(dropView(u, true).catch(function () {})); return; }
+      live[tk] = true;
+      var j = JSON.stringify(viewPayload(u));
+      if (viewSent[tk] === j) return;
+      viewSent[tk] = j;
+      var p = JSON.parse(j);
+      /* 見せる部屋が無くなったら、名前だけの写しも残さない */
+      if (!p.rooms.length) {
+        jobs.push(rtdb.ref("views/" + tk).remove().catch(viewFailed(tk)));
+        return;
+      }
+      p.updatedAt = now();
+      jobs.push(rtdb.ref("views/" + tk).set(p).catch(viewFailed(tk)));
+    });
+    /* 使わなくなった控えは残さない */
+    Object.keys(viewSent).forEach(function (tk) { if (!live[tk]) delete viewSent[tk]; });
+    return Promise.all(jobs);
+  }
+  /* 写しの更新に失敗したら黙らない。古い中身が見えたままになるため。 */
+  function viewFailed(tk) {
+    return function (e) {
+      delete viewSent[tk];
+      ui.saving = "閲覧リンクの中身を更新できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
+      paintStatus();
+    };
+  }
+  /* 予約は全員ぶんで1本しかないので、止めたら必ず取り直す。
+     取り直さないと、ほかの人の写しの更新が黙って捨てられる。 */
+  function stopViewTimer() { clearTimeout(viewTimer); viewTimer = null; }
+  function syncViewsSoon() {
+    stopViewTimer();
+    if (!isCeo() || !Object.keys(viewLinks).length) return;
+    viewTimer = setTimeout(function () { viewTimer = null; syncViews(); }, 800);
+  }
+  /* 画面を離れる前に、予約してある写しの更新を出しきる。
+     取りこぼすと「消したはずの行」が閲覧リンク側に残る。 */
+  function flushViews() {
+    stopViewTimer();
+    return syncViews();          /* 変わっていなければ何も書かない */
+  }
+
+  /* H3 対策：台帳から外れた写しを片づける。
+     写しは token を知らないと読めないので、放っておくと誰も消せない置き土産になる。
+     社長のルールにだけ views の一覧を許してあるので、入り直したときに1回だけ掃除する。 */
+  var viewSwept = false;
+  function sweepViews() {
+    if (viewSwept || !isCeo()) return;
+    viewSwept = true;
+    /* 写しを先に、台帳をあとに読む。この順なら、読んでいる間に
+       別のタブで作られたリンクは必ず台帳側に入るので、消しすぎない。
+       （逆にすると、作ったばかりの写しを消しかねない） */
+    rtdb.ref("views").once("value").then(function (s) {
+      return rtdb.ref("viewLinks").once("value").then(function (ls) { return [s, ls]; });
+    }).then(function (ss) {
+      var s = ss[0], links = ss[1].val() || {};
+      var all = s.val() || {}, keep = {}, upd = {}, n = 0;
+      Object.keys(links).forEach(function (u) {
+        var tk = links[u] && links[u].token;
+        if (tk) keep[tk] = true;
+      });
+      Object.keys(all).forEach(function (tk) {
+        if (!keep[tk]) { upd["views/" + tk] = null; n++; }
+      });
+      if (n) rtdb.ref().update(upd).catch(function () {});
+    }).catch(function () {});
+  }
+  /* 台帳の購読を外す。外したことを忘れると、入り直したときに購読し直せない。 */
+  function dropViewSub() {
+    if (viewRef) { viewRef.off(); viewRef = null; }
+    viewLinks = {}; viewSent = {}; viewSwept = false;
+  }
+  /* リンクを使えなくする。写しを消せば、渡したURLはその場で無効になる。
+     auto=true は syncViews からの自動の後始末。
+     こちらから予約を入れ直すと、消せない間ずっと回り続ける。 */
+  function dropView(who, auto) {
+    /* who が空のまま連結すると viewLinks ごと消える。ここで必ず止める。 */
+    if (!who || typeof who !== "string" || who.indexOf("/") >= 0) return Promise.resolve();
+    var prev = viewLinks[who], tk = prev && prev.token, upd = {};
+    upd["viewLinks/" + who] = null;
+    if (tk) { upd["views/" + tk] = null; delete viewSent[tk]; }
+    /* 手元の台帳も先に落とす。予約済みの書き込みが、消した写しを書き戻さないように。 */
+    delete viewLinks[who];
+    stopViewTimer();
+    return rtdb.ref().update(upd).then(function () {
+      if (!auto) syncViewsSoon();      /* ほかの人ぶんの更新を捨てない */
+    }, function (e) {
+      /* 消せなかったのに画面から消えると、生きているURLを止められなくなる */
+      if (prev) viewLinks[who] = prev;
+      if (!auto) syncViewsSoon();
+      render();
+      e = e || {};
+      e.__told = true;                 /* 呼び出し元が二重に知らせないための印 */
+      throw e;
+    });
+  }
 
   function fac(id) { return field.facilities.filter(function (f) { return f.id === id; })[0]; }
   function facName(id) { var f = fac(id); return f ? f.name : ""; }
@@ -602,6 +790,7 @@ var FIREBASE_CONFIG = {
         '<button data-act="member" data-id="' + esc(u) + '" style="font-weight:700;color:' +
         (m.active === false ? "var(--ok)" : "var(--bad)") + '">' +
         (m.active === false ? "戻す" : "止める") + "</button></div>";
+      h += viewLineHtml(u, m);
     });
 
     if (ui.invite) {
@@ -615,6 +804,45 @@ var FIREBASE_CONFIG = {
     }
 
     return h + '<div style="margin-top:16px"><button data-act="settings" style="background:none;border:0;font-size:12px;color:var(--ink3)">設定を閉じる</button></div></div>';
+  }
+
+  /* 設定画面の、その人ぶんの閲覧リンク行。
+     あいことばそのものは画面に出さない（肩越しの覗き見・スクショ対策）。
+     コピーできなかったときだけ、選んで写せるようにURLを出す。 */
+  function viewLineHtml(u, m) {
+    var h = '<div class="vline">';
+    if (m.active === false) {
+      /* 止めた時点でリンクも消しているが、消し損ねが残ったときに手で消せるようにしておく */
+      if (viewLinks[u] && viewLinks[u].token) {
+        h += '<span class="pnote" style="color:var(--bad)">閲覧リンクが残っています。消してください。</span>' +
+          '<button class="go stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
+      } else {
+        h += '<span class="pnote">止めている間は閲覧リンクも使えません。</span>';
+      }
+      return h + "</div>";
+    }
+    if (viewLinks[u] && viewLinks[u].token && !viewPayload(u).rooms.length) {
+      /* 部屋から外れると写しを消すので、渡してあるURLは今は読めない */
+      h += '<span class="pnote" style="color:var(--bad)">' +
+        '部屋に入っていないので、今は読めません。部屋へ入れると、同じURLでまた読めます。</span>' +
+        '<button class="stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
+      return h + "</div>";
+    }
+    if (viewLinks[u] && viewLinks[u].token) {
+      h += '<span class="pnote">閲覧リンクを渡しています（ログインなしで読めます）</span>' +
+        '<button class="go" data-act="vcopy" data-id="' + esc(u) + '">リンクをコピー</button>' +
+        '<button data-act="vnew" data-id="' + esc(u) + '">作り直す</button>' +
+        '<button class="stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
+      if (ui.showUrl === u) {
+        h += '<input class="vurl" readonly value="' + esc(viewUrl(viewLinks[u].token)) + '">';
+      }
+    } else if (!viewPayload(u).rooms.length) {
+      h += '<span class="pnote">部屋に入れると、閲覧リンクを渡せます。</span>';
+    } else {
+      h += '<span class="pnote">ログインなしで読めるリンクを渡せます。</span>' +
+        '<button data-act="vnew" data-id="' + esc(u) + '">閲覧リンクを作る</button>';
+    }
+    return h + "</div>";
   }
 
   /* ノートの中の1ブロック。書ける人にはつまみ・本文・消すボタンを出す。 */
@@ -856,8 +1084,10 @@ var FIREBASE_CONFIG = {
       ui.saving = "ログアウトしています";
       paintStatus();
       var out = function () { auth.signOut(); };
+      /* flushSaves() は呼んだ時点で保留分を取り出すので、2回呼ぶと2回目が空で即決着する。
+         必ず1回だけ呼び、その結果を待つこと。 */
       Promise.race([
-        flushSaves(),
+        Promise.all([flushSaves(), flushViews()]),
         new Promise(function (r) { setTimeout(r, 1500); })
       ]).then(out, out);
       return;
@@ -906,8 +1136,79 @@ var FIREBASE_CONFIG = {
       var cur = members[id] || {};
       var next = cur.active === false;
       if (!next && !confirm((cur.name || cur.mail || id) + " を全部の部屋から締め出します。よろしいですか？")) return;
-      rtdb.ref("members/" + id + "/active").set(next)
-        .catch(function (err) { alert("変更できませんでした（" + err.code + "）"); });
+      /* 締め出すときは、先に閲覧リンクを消す。
+         途中で失敗しても「リンクだけ生き残る」状態にならないようにするため。 */
+      (next ? Promise.resolve() : dropView(id).catch(function (err) {
+        alert("閲覧リンクを消せませんでした（" + ((err && err.code) || "原因不明") + "）。締め出しは行いません。");
+        throw err;
+      }))
+        .then(function () { return rtdb.ref("members/" + id + "/active").set(next); })
+        .catch(function (err) {
+          if (err && err.__told) return;         /* もう知らせてある */
+          alert("変更できませんでした（" + ((err && err.code) || "原因不明") + "）");
+        });
+      return;
+    }
+    else if (act === "vnew") {
+      if (!id || !owns(members, id) || id === me.uid) return;
+      /* 部屋が0件だと見せる中身が無く、写しがルールの形チェックに通らない。
+         「作れませんでした」とだけ出ても分からないので、先に理由を出す。 */
+      if (!viewPayload(id).rooms.length) {
+        ui.msg = nameOfUid(id) + "はまだどの部屋にも入っていません。先に部屋へ入れてください。";
+        render(); return;
+      }
+      if (viewLinks[id] &&
+          !confirm(nameOfUid(id) + "の閲覧リンクを作り直します。前に渡したURLは使えなくなります。よろしいですか？")) return;
+      var prevLink = viewLinks[id], oldTk = prevLink && prevLink.token;
+      var tk = newToken();
+      if (!tk) { ui.msg = "このブラウザでは閲覧リンクを作れません。"; render(); return; }
+      var vj = JSON.stringify(viewPayload(id));
+      var vp = JSON.parse(vj); vp.updatedAt = now();
+      var vu = {};
+      if (oldTk) { vu["views/" + oldTk] = null; delete viewSent[oldTk]; }
+      vu["views/" + tk] = vp;
+      vu["viewLinks/" + id] = { token: tk, createdAt: now() };
+      viewSent[tk] = vj;
+      viewLinks[id] = { token: tk, createdAt: now() };   /* 手元も先に入れ替える */
+      stopViewTimer();
+      ui.showUrl = "";
+      rtdb.ref().update(vu)
+        .then(function () {
+          ui.msg = nameOfUid(id) + "の閲覧リンクを作りました。「リンクをコピー」で渡してください。";
+          syncViewsSoon(); render();
+        })
+        .catch(function (err) {
+          delete viewSent[tk];
+          /* 手元を元に戻す。戻さないと、DBに無いURLを渡してしまう */
+          if (prevLink) viewLinks[id] = prevLink; else delete viewLinks[id];
+          syncViewsSoon();
+          ui.msg = "作れませんでした（" + ((err && err.code) || "原因不明") + "）"; render();
+        });
+      return;
+    }
+    else if (act === "vstop") {
+      if (!id || !owns(viewLinks, id) || !viewLinks[id]) return;
+      if (!confirm(nameOfUid(id) + "の閲覧リンクを止めます。渡したURLは使えなくなります。よろしいですか？")) return;
+      ui.showUrl = "";
+      dropView(id)
+        .then(function () { ui.msg = nameOfUid(id) + "の閲覧リンクを止めました。"; render(); })
+        .catch(function (err) {
+          ui.msg = "止められませんでした（" + ((err && err.code) || "原因不明") + "）"; render();
+        });
+      return;
+    }
+    else if (act === "vcopy") {
+      if (!id || !owns(viewLinks, id) || !viewLinks[id] || !viewLinks[id].token) return;
+      var vurl = viewUrl(viewLinks[id].token);
+      var okCopy = function () { ui.showUrl = ""; ui.msg = nameOfUid(id) + "のリンクをコピーしました。"; render(); };
+      var noCopy = function () {
+        ui.showUrl = id;
+        ui.msg = "コピーできませんでした。下に出たURLを選んで写してください。";
+        render();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(vurl).then(okCopy, noCopy);
+      } else noCopy();
       return;
     }
     else if (act === "doinvite") {
@@ -1142,9 +1443,9 @@ var FIREBASE_CONFIG = {
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
   /* タブを閉じる・背面へ回すときは、書きかけを出しきる */
-  window.addEventListener("pagehide", function () { flushSaves(); });
+  window.addEventListener("pagehide", function () { flushSaves(); flushViews(); });
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) flushSaves();
+    if (document.hidden) { flushSaves(); flushViews(); }
   });
   document.addEventListener("pointerdown", function () { heldAt = Date.now(); }, true);
   function released() {
@@ -1181,7 +1482,11 @@ var FIREBASE_CONFIG = {
 
   auth.onAuthStateChanged(function (u) {
     ui.saving = ""; failed = {}; failMsg = "";
-    if (!u) { me = null; members = {}; unwatchAll(); render(); return; }
+    if (!u) {
+      me = null; members = {}; viewLinks = {}; viewSent = {};
+      gotRooms = false; gotMembers = false;
+      stopViewTimer(); dropViewSub(); unwatchAll(); render(); return;
+    }
     rtdb.ref("members/" + u.uid).on("value", function (snap) {
       var m = snap.val();
       if (!m || m.active === false) {
@@ -1201,15 +1506,35 @@ var FIREBASE_CONFIG = {
         rtdb.ref("rooms").on("value", function (s) {
           var v = s.val() || {};
           Object.keys(v).forEach(function (rid) { v[rid].board = normBoard(v[rid].board); });
-          if (same(v, rooms)) return;
-          rooms = v; render();
+          gotRooms = true;
+          if (same(v, rooms)) { syncViewsSoon(); return; }
+          rooms = v; syncViewsSoon(); render();
         });
-        rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); });
+        rtdb.ref("members").on("value", function (s) {
+          members = s.val() || {}; gotMembers = true; syncViewsSoon(); render();
+        });
+        /* 台帳は社長だけが読み書きする。ここを members に置くと、
+           ほかの利用者が人のあいことばを読めてしまう。 */
+        if (!viewRef) {
+          viewRef = rtdb.ref("viewLinks");
+          viewRef.on("value", function (s) {
+            viewLinks = s.val() || {};
+            sweepViews(); syncViewsSoon(); render();
+          }, function (e) {
+            viewLinks = {};
+            ui.msg = "閲覧リンクの一覧を読めませんでした（" +
+              ((e && (e.code || e.message)) || "原因不明") + "）。このまま新しく作ると、前のURLが残ります。";
+            render();
+          });
+        }
       } else {
+        dropViewSub();
         rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); }, function () {});
       }
 
-      rtdb.ref("config").on("value", function (s) { conf = s.val() || { ceoName: "谷口" }; render(); });
+      rtdb.ref("config").on("value", function (s) {
+        conf = s.val() || { ceoName: "谷口" }; syncViewsSoon(); render();
+      });
       rtdb.ref("field").on("value", function (s) {
         var v = normField(s.val());
         if (same(v, field)) return;

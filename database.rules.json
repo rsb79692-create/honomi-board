@@ -44,6 +44,45 @@
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true",
       ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true"
     },
+    "viewLinks": {
+      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      "$uid": {
+        "token": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{22,64}$/)"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        },
+        ".validate": "newData.hasChildren(['token'])"
+      }
+    },
+    "views": {
+      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      "$token": {
+        ".read": "data.child('uid').exists() && root.child('viewLinks').child(data.child('uid').val()).child('token').val() === $token && root.child('members').child(data.child('uid').val()).child('active').val() === true",
+        ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+        ".validate": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/) && newData.hasChildren(['uid','updatedAt','rooms'])",
+        "uid": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
+        },
+        "who": {
+          ".validate": "newData.isString()"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "rooms": {
+          ".validate": "newData.hasChildren()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "rooms": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo' && root.child('members').child(auth.uid).child('active').val() === true",
       "$rid": {
