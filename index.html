@@ -132,9 +132,13 @@
   .pick button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; white-space:nowrap; }
 
   /* 共有ボードのときだけ #app が広くなるが、設定・部屋作成のパネルは広げない。
-     名前と「止める」が離れすぎて、行を取り違えて押す事故を防ぐため。 */
+     名前と「削除」が離れすぎて、行を取り違えて押す事故を防ぐため。 */
+  /* 共有ボードのときだけ #app が広くなるが、設定・部屋作成のパネルは広げない。
+     名前と「削除」が離れすぎて、行を取り違えて押す事故を防ぐため。
+     幅は狭いほうのタブ（#app 640px の内寸）へ合わせる。タブで幅が変わると、
+     閲覧リンクの行が片方でだけ折り返して、誰のリンクか分からなくなる。 */
   .panel { margin-top:10px; border:1px solid var(--line); border-radius:4px; background:var(--surface);
-    padding:12px; max-width:640px; }
+    padding:12px; max-width:612px; }
   .panel h3 { margin:0 0 4px; font-size:13px; font-weight:700; }
   .panel p { margin:0 0 8px; font-size:12px; color:var(--ink2); line-height:1.7; }
   .pline { display:flex; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
@@ -142,7 +146,16 @@
   .pline input[type="text"], .pline input:not([type]) { flex:1; border:0; border-bottom:1px dashed var(--line);
     background:transparent; font-family:inherit; font-size:14px; padding:3px 0; color:var(--ink); }
   .pline input:focus { outline:none; border-bottom-color:var(--ink); }
-  .pline button { background:none; border:0; font-size:12px; color:var(--ink3); }
+  /* 押せるボタンと、押せない状態表示（.pnote）が同じ見た目にならないようにする。
+     ホバーで色が変わることと、指で押せる大きさを持たせることで見分けが付く。 */
+  .pline button { background:none; border:0; font-size:12px; color:var(--ink3);
+    padding:4px 6px; min-height:26px; border-radius:3px; }
+  .pline button:hover { color:var(--ink); background:#F1F2EC; }
+  /* 同じ人のブロックの中で、押す大きさがちぐはぐにならないようにする。
+     この指定は .pline button の定義より後ろに置くこと（前に置くと上書きされる）。 */
+  @media (max-width:480px) {
+    .pline button { min-height:44px; padding:0 10px; }
+  }
   .pname { flex:1; font-size:14px; }
   .pnote { font-size:11px; color:var(--ink3); }
   .chk { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:14px; }
@@ -875,10 +888,13 @@ var FIREBASE_CONFIG = {
       var r = rooms[rid];
       var who = Object.keys(r.members || {}).filter(function (u) { return u !== me.uid; })
         .map(nameOfUid).join("、");
-      h += '<div class="pline"><span class="pname">' + esc(r.name || "名前なし") + "</span>" +
+      var rn = r.name || "名前なし";
+      h += '<div class="pline"><span class="pname">' + esc(rn) + "</span>" +
         '<span class="pnote">' + esc(who || "自分だけ") + "</span>" +
-        '<button data-act="editroom" data-id="' + esc(rid) + '">変える</button>' +
-        '<button data-act="delroom" data-id="' + esc(rid) + '">削除</button></div>';
+        '<button data-act="editroom" data-id="' + esc(rid) + '" aria-label="' + esc(rn) +
+          'を変える">変える</button>' +
+        '<button data-act="delroom" data-id="' + esc(rid) + '" aria-label="' + esc(rn) +
+          'を削除" style="font-weight:700;color:var(--bad)">削除</button></div>';
     });
 
     h += '<h3 style="margin-top:18px">利用者</h3>';
@@ -889,14 +905,16 @@ var FIREBASE_CONFIG = {
           '</span><span class="pnote">あなた</span></div>';
         return;
       }
+      /* 一時的に止める操作は持たない。外すときは「削除」だけ。 */
+      var mn = m.name || m.mail || "この利用者";
       h += '<div class="pline"><input value="' + esc(m.name || "") + '" data-mname="' + esc(u) +
-        '" placeholder="表示名">' +
-        '<span class="pnote" style="color:' + (m.active === false ? "var(--bad)" : "var(--ink3)") + '">' +
-        (m.active === false ? "止めています" : "使えます") + "</span>" +
-        '<button data-act="member" data-id="' + esc(u) + '" style="font-weight:700;color:' +
-        (m.active === false ? "var(--ok)" : "var(--bad)") + '">' +
-        (m.active === false ? "戻す" : "止める") + "</button></div>";
-      h += viewLineHtml(u, m);
+        '" placeholder="表示名" aria-label="' + esc(mn) + 'の表示名">' +
+        '<span class="pnote">' + (m.active === false ? "使えません" : "使えます") + "</span>" +
+        '<button data-act="delmember" data-id="' + esc(u) + '" aria-label="' + esc(mn) +
+        'を削除" style="font-weight:700;color:var(--bad)">削除</button></div>';
+      /* active は今の画面から作れないが、古いデータに false が残っていることは有りうる。
+         その人はルール上どのみち閲覧リンクを読めないので、行そのものを出さない。 */
+      if (m.active !== false) h += viewLineHtml(u);
     });
 
     if (ui.invite) {
@@ -915,18 +933,8 @@ var FIREBASE_CONFIG = {
   /* 設定画面の、その人ぶんの閲覧リンク行。
      あいことばそのものは画面に出さない（肩越しの覗き見・スクショ対策）。
      コピーできなかったときだけ、選んで写せるようにURLを出す。 */
-  function viewLineHtml(u, m) {
+  function viewLineHtml(u) {
     var h = '<div class="vline">';
-    if (m.active === false) {
-      /* 止めた時点でリンクも消しているが、消し損ねが残ったときに手で消せるようにしておく */
-      if (viewLinks[u] && viewLinks[u].token) {
-        h += '<span class="pnote" style="color:var(--bad)">閲覧リンクが残っています。消してください。</span>' +
-          '<button class="go stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
-      } else {
-        h += '<span class="pnote">止めている間は閲覧リンクも使えません。</span>';
-      }
-      return h + "</div>";
-    }
     if (viewLinks[u] && viewLinks[u].token && !viewPayload(u).rooms.length) {
       /* 部屋から外れると写しを消すので、渡してあるURLは今は読めない */
       h += '<span class="pnote" style="color:var(--bad)">' +
@@ -1244,7 +1252,11 @@ var FIREBASE_CONFIG = {
       var nm = (ui.newRoomName || "").trim();
       if (!nm) { ui.msg = "部屋の名前を入れてください。"; render(); return; }
       var mem = {}; mem[me.uid] = true;
-      Object.keys(ui.newRoomPick).forEach(function (u) { if (ui.newRoomPick[u]) mem[u] = true; });
+      /* 名簿に居る人だけを入れる。消した人の選択が残っていると、
+         部屋には入るのに members 側が書けず（.validate で落ちる）、幽霊のメンバー行が残る。 */
+      Object.keys(ui.newRoomPick).forEach(function (u) {
+        if (ui.newRoomPick[u] && owns(members, u)) mem[u] = true;
+      });
       var rid = uid();
       rtdb.ref("rooms/" + rid).set({ name: nm, members: mem, board: EMPTY_BOARD })
         .then(function () {
@@ -1271,20 +1283,65 @@ var FIREBASE_CONFIG = {
       rtdb.ref().update(upd).catch(function (err) { alert("消せませんでした（" + err.code + "）"); });
       return;
     }
-    else if (act === "member") {
-      var cur = members[id] || {};
-      var next = cur.active === false;
-      if (!next && !confirm((cur.name || cur.mail || id) + " を全部の部屋から締め出します。よろしいですか？")) return;
-      /* 締め出すときは、先に閲覧リンクを消す。
-         途中で失敗しても「リンクだけ生き残る」状態にならないようにするため。 */
-      (next ? Promise.resolve() : dropView(id).catch(function (err) {
-        alert("閲覧リンクを消せませんでした（" + ((err && err.code) || "原因不明") + "）。締め出しは行いません。");
-        throw err;
-      }))
-        .then(function () { return rtdb.ref("members/" + id + "/active").set(next); })
+    else if (act === "delmember") {
+      /* 利用者を消す。消すのは「その人の登録」だけ。
+         ・rooms/{全部屋}/members/{uid}  … 部屋のメンバー登録（認可の正）
+         ・members/{uid}                 … 名簿（配下の rooms も一緒に消える。表示の正）
+         ・viewLinks/{uid} と views/{token} … 渡してある閲覧リンク
+         部屋そのもの・共有ボードの中身・現場マネジメントは消さない。
+         Firebase Auth のアカウントも消さない（消せる仕組みをアプリに持たせない）。 */
+      if (!id || typeof id !== "string" || id.indexOf("/") >= 0 ||
+          !owns(members, id) || id === me.uid) return;
+      /* 部屋と名簿が揃う前に消すと、入っている部屋を取りこぼす */
+      if (!gotRooms || !gotMembers) {
+        ui.msg = "読み込み中です。少し待ってからもう一度押してください。";
+        render(); return;
+      }
+      var who = members[id] || {};
+      if (!confirm("この利用者を削除しますか？\n\n" + (who.name || who.mail || "") +
+                   "\n\n全部の部屋から外れ、このボードへ入れなくなります。\n" +
+                   "共有ボードに書かれた内容は残ります。\n\n" +
+                   "元に戻すには「人を追加する」で、同じメールアドレスと" +
+                   "そのパスワードを入れ直す必要があります。")) return;
+
+      var rids = {}, dupd = {};
+      /* 部屋の側と名簿の側は二重に持っている。取りこぼさないよう両方から集める。 */
+      Object.keys(rooms).forEach(function (rid) {
+        var r = rooms[rid];
+        if (r && owns(r.members || {}, id)) rids[rid] = 1;
+      });
+      Object.keys(who.rooms || {}).forEach(function (rid) { rids[rid] = 1; });
+      Object.keys(rids).forEach(function (rid) {
+        if (rid && rid.indexOf("/") < 0) dupd["rooms/" + rid + "/members/" + id] = null;
+      });
+      dupd["members/" + id] = null;
+      /* 閲覧リンクは台帳と写しの両方を落とす。片方だけ残すと URL が生きたままになる。 */
+      var vl = viewLinks[id], vtk = vl && vl.token;
+      if (vtk && !/^[A-Za-z0-9_-]{22,64}$/.test(vtk)) vtk = null;
+      dupd["viewLinks/" + id] = null;
+      if (vtk) { dupd["views/" + vtk] = null; delete viewSent[vtk]; }
+      /* 予約中の写しの更新が、消した直後に書き戻さないように止める */
+      delete viewLinks[id];
+      stopViewTimer();
+
+      rtdb.ref().update(dupd)
+        .then(function () {
+          /* 画面に残った選択も落とす。残すと、次に部屋を作るときへ紛れ込む */
+          delete ui.newRoomPick[id];
+          if (ui.showUrl === id) ui.showUrl = "";
+          /* ログイン用のアカウントはアプリからは消せない。消し忘れると、その人は
+             timecard 側のデータへ入れるままになるので、後始末の手がかりを必ず残す。 */
+          ui.msg = (who.name || who.mail || "利用者") + " を削除しました。" +
+            "ログイン用のアカウントは残っています。完全に止めるには、Firebase コンソールで " +
+            (who.mail || "そのメールアドレス") + " のアカウントを無効化してください。";
+          syncViewsSoon(); render();
+        })
         .catch(function (err) {
-          if (err && err.__told) return;         /* もう知らせてある */
-          alert("変更できませんでした（" + ((err && err.code) || "原因不明") + "）");
+          /* 消せなかったら手元も元に戻す。戻さないと、生きているリンクを止められなくなる */
+          if (vl) viewLinks[id] = vl;
+          syncViewsSoon();
+          ui.msg = "削除できませんでした（" + ((err && err.code) || "原因不明") + "）";
+          render();
         });
       return;
     }
@@ -1357,6 +1414,15 @@ var FIREBASE_CONFIG = {
       var second = firebase.apps.filter(function (a) { return a.name === "invite"; })[0] ||
         firebase.initializeApp(FIREBASE_CONFIG, "invite");
       second.auth().createUserWithEmailAndPassword(ev, pv)
+        .catch(function (err) {
+          /* 一度削除した人を戻すときは、ログイン用のアカウントが残っているのでここへ来る。
+             そのアカウントのパスワードが分かれば、UID を取り直して名簿へ入れ直せる。
+             （UID を変えないので、部屋・閲覧リンクの紐付けも元どおりに作れる） */
+          if (err && err.code === "auth/email-already-in-use") {
+            return second.auth().signInWithEmailAndPassword(ev, pv);
+          }
+          throw err;
+        })
         .then(function (cred) {
           var u = cred.user.uid;
           return second.auth().signOut().then(function () {
@@ -1365,8 +1431,10 @@ var FIREBASE_CONFIG = {
         })
         .then(function () { ui.invite = false; ui.msg = nv + " を登録しました。部屋に入れてください。"; render(); })
         .catch(function (err) {
-          ui.msg = err.code === "auth/email-already-in-use" ? "そのメールアドレスは登録済みです。" :
-            "登録できませんでした（" + err.code + "）";
+          ui.msg = /invalid-credential|wrong-password|user-not-found|invalid-login/.test(err.code)
+            ? "そのメールアドレスは登録済みです。前に使っていたパスワードを入れると、同じ人として戻せます。" +
+              "分からないときは、本人にログイン画面の「パスワードを忘れた」から再設定してもらってください。"
+            : "登録できませんでした（" + err.code + "）";
           render();
         });
       return;
@@ -1425,7 +1493,9 @@ var FIREBASE_CONFIG = {
     if (!b || !ui.editingRoom) return;
     var rid = ui.editingRoom; ui.editingRoom = null;
     var mem = {}; mem[me.uid] = true;
-    Object.keys(ui.newRoomPick).forEach(function (u) { if (ui.newRoomPick[u]) mem[u] = true; });
+    Object.keys(ui.newRoomPick).forEach(function (u) {
+      if (ui.newRoomPick[u] && owns(members, u)) mem[u] = true;
+    });
     var old = Object.keys((rooms[rid] || {}).members || {});
     var upd = {};
     upd["rooms/" + rid + "/name"] = (ui.newRoomName || "").trim() || rooms[rid].name;
