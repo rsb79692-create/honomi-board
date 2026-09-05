@@ -97,7 +97,7 @@
           }
         },
         "board": {
-          "toCeo": {
+          "toManager": {
             ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || root.child('rooms').child($rid).child('members').child(auth.uid).val() === true)"
           },
           "mgrAsk": {

@@ -62,6 +62,7 @@
   .card { min-width:0; border-left:3px solid var(--line); padding-left:11px; }
   .card[data-v="ceo"] { border-left-color:var(--ceo); }
   .card[data-v="mgr"] { border-left-color:var(--mgr); }
+  .card[data-v="both"] { border-left-color:var(--ink2); }
   .card-h { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding-bottom:2px; }
   .card-t { font-size:17px; font-weight:700; margin:0; }
   .card-w { font-size:11px; color:var(--ink2); }
@@ -76,12 +77,11 @@
     border:0; border-radius:3px; background:transparent; color:var(--ink2); font-size:15px;
     line-height:1; padding:0; }
   .blk .fold:hover { background:#F1F2EC; color:var(--ink); }
-  /* アウトプットの「だれが・いつ」。行の下へ小さく折り返す。 */
+  /* 「だれが・いつ」。行の下へ小さく折り返す。 */
   .meta { flex:0 0 100%; padding:0 10px 8px 32px; font-size:11px; color:var(--ink2); }
+  .meta .other { font-weight:700; color:var(--ink); }
 
   .sec { margin-top:20px; border-left:3px solid var(--line); padding-left:11px; }
-  .sec[data-v="ceo"] { border-left-color:var(--ceo); }
-  .sec[data-v="mgr"] { border-left-color:var(--mgr); }
   .sec-h { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
   .sec-t { font-size:17px; font-weight:700; margin:0; }
   .sec-n { font-size:11px; color:var(--ink3); }
@@ -96,8 +96,8 @@
   .blk { display:flex; align-items:flex-start; flex-wrap:wrap; }
   .blk + .blk { border-top:1px solid #E2E4DC; }
   .blk:focus-within { background:#F1F2EC; box-shadow:inset 3px 0 0 var(--ceo); }
-  .sec[data-v="mgr"] .blk:focus-within,
   .card[data-v="mgr"] .blk:focus-within { box-shadow:inset 3px 0 0 var(--mgr); }
+  .card[data-v="both"] .blk:focus-within { box-shadow:inset 3px 0 0 var(--ink2); }
   .blk.dragging { opacity:.4; }
   .grip { flex:none; align-self:stretch; width:32px; min-height:44px; border:0; background:transparent;
     padding:0; color:var(--ink3); font-size:15px; line-height:1; cursor:grab; touch-action:none;
@@ -119,6 +119,7 @@
   .ask button { border:0; background:none; padding:3px 6px; font-size:12px; font-weight:700; color:var(--bad); }
   .ask button.no { color:var(--ink3); font-weight:400; }
   .empty { font-size:13px; color:var(--ink2); line-height:1.7; padding:12px 0 2px; margin:0; }
+  .note .empty { padding:12px 14px; }
   /* 現場マネジメントの「＋追加」で出る入力行 */
   .rin { display:flex; gap:6px; margin-top:8px; }
   .rin input { flex:1; min-width:0; border:1px solid var(--line); border-radius:3px; padding:8px 9px; font-size:16px;
@@ -359,27 +360,31 @@ var FIREBASE_CONFIG = {
   /* 共有ボードは1つの画面。役割ごとに4枚を並べる。
      どの欄を誰が書くかは**欄で決まっている**ので、見る人によって左右が入れ替わることはない。
 
-       ビジョン    ceoMind    社長が書く。現場は読むだけ。1行に畳んで一覧性を優先する
-       タスク      toManager  社長が書く。やってほしいこと・確認してほしいこと（旧「指針」）
-       アウトプット toCeo      現場が書く。やったこと・対応した結果（旧「報告」）
-       相談        mgrAsk     現場が書く。判断してほしいこと
+       ビジョン    ceoMind    社長が書く → 現場が読む。1行に畳んで一覧性を優先する
+       タスク      toManager  現場が書く → 社長が読む（旧「指針」）
+       アウトプット toCeo      社長が書く → 現場が読む（旧「報告」）
+       やりとり    mgrAsk     社長・現場の**どちらも**書く／読む（旧「相談」）。
+                              相談・確認・質問・連絡・意見交換の場
 
      ⚠ DB のキーは旧名のまま。表示名だけを変えている（既存データをそのまま見せるため）。
      キーを変えると本番の既存データが読めなくなるので、改名してはならない。 */
   function cards() {
     var ceo = isCeo();
-    var mine = "あなた";
-    var ceoWho = ceo ? mine : (partyLabel(true) || "社長");
-    var mgrWho = ceo ? (partyLabel(false) || "現場") : mine;
+    /* 見出しの右に出す一言。助詞までここで作る（「が書く」を後ろで足すと
+       「あなたも相手もが書く」のように助詞が重なる）。 */
+    var ceoWho = ceo ? "あなたが書く" : (partyLabel(true) || "社長") + "が書く";
+    var mgrWho = ceo ? (partyLabel(false) || "現場") + "が書く" : "あなたが書く";
+    /* 「だれが・いつ」は、書き手が1人に定まらない欄にだけ出す。
+       ビジョンは1行に畳んで一覧性を優先するので出さない。 */
     return [
-      { key: "ceoMind",   voice: "ceo", title: "ビジョン",     who: ceoWho, write: ceo,
+      { key: "ceoMind",   voice: "ceo",  title: "ビジョン",     who: ceoWho, write: ceo,
         fold: true, ph: "いま頭にあることを書く" },
-      { key: "toManager", voice: "ceo", title: "タスク",       who: ceoWho, write: ceo,
-        ph: "やってほしいこと・確認してほしいことを書く" },
-      { key: "toCeo",     voice: "mgr", title: "アウトプット", who: mgrWho, write: !ceo,
-        meta: true, ph: "やったこと・対応した結果を書く" },
-      { key: "mgrAsk",    voice: "mgr", title: "相談",         who: mgrWho, write: !ceo,
-        ph: "判断してほしいことを書く" }
+      { key: "toManager", voice: "mgr",  title: "タスク",       who: mgrWho, write: !ceo,
+        meta: true, ph: "やること・抱えていることを書く" },
+      { key: "toCeo",     voice: "ceo",  title: "アウトプット", who: ceoWho, write: ceo,
+        meta: true, ph: "出したもの・決めたことを書く" },
+      { key: "mgrAsk",    voice: "both", title: "やりとり",     who: "あなたも相手も書く", write: true,
+        meta: true, ph: "相談・確認・質問・連絡を書く" }
     ];
   }
 
@@ -441,7 +446,7 @@ var FIREBASE_CONFIG = {
     /* 部屋（rid）は予約した時点で固定する。発火までに部屋を切り替えても、
        別の部屋へ書いて元の部屋を全消去しないため。
        ただし**中身は発火する瞬間に取り直す**。予約時点で固めると、待っている 700ms の間に
-       届いた他の人の行を巻き添えにして消す（アウトプットと相談は複数人が同じ欄へ書く）。 */
+       届いた他の人の行を巻き添えにして消す（タスクとやりとりは複数人が同じ欄へ書く）。 */
     queue("board:" + rid + ":" + key, function () {
       var r = rooms[rid];
       if (!r) return Promise.resolve();          /* 部屋が消えていたら書かない */
@@ -482,14 +487,21 @@ var FIREBASE_CONFIG = {
       paintStatus();
       /* その欄の保存が届いたら、入力中の上書き表示は役目を終える。
          失敗したときは解除しない（打った文字を画面に残すため） */
-      if (edit && !edit.live && edit.pk.split("|")[0] === p.owner) edit = null;
+      if (edit && edit.pk.split("|")[0] === p.owner) {
+        if (edit.live) delete edit.failed; else edit = null;
+      }
       syncViewsSoon();                 /* 渡してあるリンクの中身も追いつかせる */
     }).catch(function (e) {
       /* 失敗の表示は、その欄が保存できるようになるまで消さない */
       failed[k] = true;
       failMsg = "保存できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
       ui.saving = failMsg;
+      /* 小さな文字の status だけだと、保存済みと見分けが付かない。目立つ帯にも出す。 */
+      ui.msg = failMsg + " 打った内容は画面に残しています。";
+      /* 打った文字を画面へ残す。reconcile に消させないための印。 */
+      if (edit && !edit.live && edit.pk.split("|")[0] === p.owner) edit.failed = true;
       paintStatus();
+      render();
     });
   }
   /* 部屋を移る前・ログアウト前に、保留中の保存を出しきる */
@@ -506,9 +518,12 @@ var FIREBASE_CONFIG = {
      views は親に .read を置かないので、あいことばを知らない人は1件も取り出せない。
      部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。 */
 
-  /* 閲覧リンクへ載せてよい欄（ビジョンとタスク）。
-     viewPayload() の外に置いて、画面側の変更と連動させない。 */
-  var VIEW_KEYS = { ceoMind: 1, toManager: 1 };
+  /* 閲覧リンクへ載せてよい欄（ビジョンとアウトプット＝どちらも社長が書く欄）。
+     viewPayload() の外に置いて、画面側の変更と連動させない。
+     ⚠ 現場が書く欄（タスク・やりとり）を足してはならない。
+        写しを書くのは社長のブラウザだけなので、現場の書き足しや削除が写しへ追いつかず、
+        消したはずの内容がログイン不要の URL に残り続ける。 */
+  var VIEW_KEYS = { ceoMind: 1, toCeo: 1 };
 
   function newToken() {
     var c = window.crypto || window.msCrypto;
@@ -535,11 +550,11 @@ var FIREBASE_CONFIG = {
       if (!r || !owns(r.members, who) || r.members[who] !== true) return;   /* その人がいる部屋だけ */
       var b = r.board || {};
       /* ⚠ ここは許可リストである。画面の欄を組み立てる cards() と共通化してはならない。
-         共通化すると、ログインなしで読める views/{token} へアウトプット・相談まで流れ出る。
-         閲覧リンクに載せるのはビジョンとタスクだけ、という意図的な線引き。 */
+         共通化すると、ログインなしで読める views/{token} へタスク・やりとりまで流れ出る。
+         閲覧リンクに載せるのは社長が書く2枚だけ、という意図的な線引き。 */
       var secs = [
-        { key: "ceoMind",   title: "ビジョン" },
-        { key: "toManager", title: "タスク" }
+        { key: "ceoMind", title: "ビジョン" },
+        { key: "toCeo",   title: "アウトプット" }
       ].filter(function (x) { return VIEW_KEYS[x.key] === 1; }).map(function (x) {
         return {
           title: x.title,
@@ -705,15 +720,19 @@ var FIREBASE_CONFIG = {
   }
   /* 保存が本当に届いたら上書き表示をやめる。届くまでは入力した文字を消さない。 */
   function reconcile() {
-    if (!edit || edit.live) return;
+    /* 保存を断られた行は、サーバーに無くても画面から消さない。
+       消すと、打った文字がどこにも残らないまま行ごと消える。 */
+    if (!edit || edit.live || edit.failed) return;
     var p = edit.pk.split("|"), cur = textOf(p[0], p.slice(1).join("|"));
     if (cur === null || cur === edit.val) edit = null;
   }
   /* 入力を反映する。末尾の空欄に書き始めたときだけ、その場で実体を作る。
      実体を作ったときは true を返す（画面はその場で作り替える。描き直すと入力が途切れるため）。 */
   function applyEdit(key, id, val) {
-    edit = { pk: pkOf(key, id), val: val, live: true };
     var o = find(key, id);
+    /* 画面の要素を細工されても、直してよい行以外は書き換えない */
+    if (o && !canEditRow(key, o)) return false;
+    edit = { pk: pkOf(key, id), val: val, live: true };
     if (o) { o.text = val; saveFor(key, 700); return false; }
     if (!val) return false;
     arrFor(key).push({ by: me.uid, createdAt: now(), id: id, text: val });
@@ -742,6 +761,17 @@ var FIREBASE_CONFIG = {
   }
   /* 壊れた行（null）が混ざっていても落ちないようにする */
   function find(key, id) { return arrFor(key).filter(function (x) { return x && x.id === id; })[0]; }
+
+  /* その行を直す・消してよいか。描く前だけでなく、実際に書き換える入口でも通す。
+     ⚠ これは画面の一貫性のための担保であって、認可ではない。
+        board はリストごと置き換える方式なので、ルール層では行単位に縛れない（AGENTS.md）。 */
+  function canEditRow(key, it) {
+    if (!it || !me) return false;
+    if (it.by === me.uid) return true;      /* 自分が書いた行はいつでも直せる・消せる */
+    if (isFieldKey(key)) return isCeo();
+    var c = cards().filter(function (x) { return x.key === key; })[0];
+    return !!(c && c.write) && isCeo();     /* 人の行は、その欄を書ける社長だけ */
+  }
 
   /* ---------- 入口 ---------- */
   function gateHtml() {
@@ -967,7 +997,7 @@ var FIREBASE_CONFIG = {
     return h + "</div>";
   }
 
-  /* 「だれが・いつ」。アウトプットの行にだけ出す。
+  /* 「だれが・いつ」。書き手が1人に定まらない欄の行に出す。
      ⚠ by と createdAt は書いた人の自己申告で、DB のルールでは縛れない
      （board はリストごと置き換えるので、by === auth.uid を .validate で強制すると
        他人の行を含むリストが書けなくなる）。
@@ -990,8 +1020,11 @@ var FIREBASE_CONFIG = {
   }
   function metaHtml(it) {
     var t = stamp(it.createdAt);
-    return '<div class="meta">' + esc(posterName(it.by)) +
-      (t ? " ・ " + esc(t) : "") + "</div>";
+    /* 相手の名前を濃く出す。やりとりは名前しか手がかりが無く、
+       「谷口」「谷村」のように1文字違いだと流し読みで取り違えるため。 */
+    var mine = !!(me && it.by === me.uid);
+    return '<div class="meta"><span class="' + (mine ? "mine" : "other") + '">' +
+      esc(posterName(it.by)) + "</span>" + (t ? " ・ " + esc(t) : "") + "</div>";
   }
 
   /* ノートの中の1ブロック。書ける人にはつまみ・本文・消すボタンを出す。
@@ -1066,7 +1099,8 @@ var FIREBASE_CONFIG = {
      opt = { canAdd, canEdit(it), label, ph } */
   function noteHtml(key, opt) {
     var items = rowsOf(key);
-    var h = '<div class="note" data-note="' + esc(key) + '">';
+    var h = '<div class="note" data-note="' + esc(key) + '"' +
+      (opt.fold ? ' data-hasfold="1"' : "") + (opt.meta ? ' data-hasmeta="1"' : "") + ">";
     items.forEach(function (it) { h += blkHtml(key, it, opt.canEdit(it), opt); });
     if (opt.canAdd) {
       var nid = newId(key), pk = pkOf(key, nid);
@@ -1086,6 +1120,7 @@ var FIREBASE_CONFIG = {
     var key = ta.getAttribute("data-list"), id = ta.getAttribute("data-id");
     var label = ta.getAttribute("aria-label") || "";
     blk.removeAttribute("data-new");
+    ta.placeholder = "";        /* 実体になった行に「ここに続けて入力…」を残さない */
     var g = document.createElement("button");
     g.className = "grip"; g.type = "button"; g.tabIndex = -1;
     g.setAttribute("data-grip", ""); g.title = "つかんで上下に動かす";
@@ -1097,7 +1132,27 @@ var FIREBASE_CONFIG = {
     x.setAttribute("data-list", key); x.setAttribute("data-id", id);
     x.title = "この行を消す"; x.setAttribute("aria-label", "この行を消す");
     x.textContent = "×";
+    if (box.hasAttribute("data-hasfold")) {
+      var fb = document.createElement("button");
+      fb.className = "fold"; fb.type = "button";
+      fb.setAttribute("data-act", "fold");
+      fb.setAttribute("data-fold", pkOf(key, id));
+      fb.setAttribute("aria-expanded", "true");
+      fb.title = "1行にたたむ"; fb.setAttribute("aria-label", "1行にたたむ");
+      fb.textContent = "⌃";
+      blk.appendChild(fb);
+    }
     blk.appendChild(x);
+    if (box.hasAttribute("data-hasmeta")) {
+      var it = find(key, id);
+      if (it) {
+        var md = document.createElement("div");
+        md.className = "meta";
+        var st = stamp(it.createdAt);
+        md.textContent = posterName(it.by) + (st ? " ・ " + st : "");
+        blk.appendChild(md);
+      }
+    }
     var nid = newId(key), wrap = document.createElement("div");
     wrap.className = "blk";
     wrap.setAttribute("data-new", "1");
@@ -1117,14 +1172,22 @@ var FIREBASE_CONFIG = {
      同じ部屋に現場側が2人いるとき、互いの投稿を黙って書き換えられないようにするため。 */
   function cardHtml(c) {
     var canWrite = !!c.write;
-    var canEditItem = function (it) { return canWrite && (isCeo() || (me && it.by === me.uid)); };
+    /* 書き手を入れ替えたとき、反対側が書いた行がその欄に残る。
+       自分が書いた行だけは、今その欄を書けなくても直せるようにしておく
+       （でないと、誰にも直せない・消せない行が残る）。 */
+    var canEditItem = function (it) {
+      if (!it || !me) return false;
+      if (it.by === me.uid) return true;
+      return canWrite && isCeo();
+    };
     var h = '<section class="card" data-v="' + esc(c.voice) + '"><div class="card-h">' +
       '<h2 class="card-t">' + esc(c.title) + "</h2>" +
-      '<span class="card-w">' + esc(c.who) + "が書く" +
+      '<span class="card-w">' + esc(c.who) +
       (canWrite ? "" : '<span class="ro">（あなたは読むだけ）</span>') + "</span></div>";
     var rows = rowsOf(c.key);
     if (!canWrite && !rows.length) {
-      return h + '<p class="empty">まだ何も書かれていません。</p></section>';
+      /* 中身のあるカードと同じ枠に収める。枠が無いと1枚だけ作りかけに見える。 */
+      return h + '<div class="note"><p class="empty">まだ何も書かれていません。</p></div></section>';
     }
     if (canWrite && rows.some(function (it) { return !canEditItem(it); })) {
       h += '<p class="hint">自分が書いた行だけ直せます。</p>';
@@ -1517,6 +1580,8 @@ var FIREBASE_CONFIG = {
     else if (act === "nodel") { ui.confirmDel = ""; }
     else if (act === "dodel") {
       ui.confirmDel = "";
+      var delRow = find(list, id);
+      if (delRow && !canEditRow(list, delRow)) { render(); return; }
       setArr(list, arrFor(list).filter(function (x) { return !x || x.id !== id; }));
       if (edit && edit.pk === pkOf(list, id)) edit = null;
       delete ui.fresh[pkOf(list, id)];
