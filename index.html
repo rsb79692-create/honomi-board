@@ -56,18 +56,28 @@
   .body { padding:4px 14px 0; }
   .notice { margin-top:14px; border:1px solid var(--warn); border-radius:4px; background:var(--surface);
     padding:10px 12px; font-size:13px; line-height:1.7; color:var(--ink2); }
-  /* 共有ボード。1つの画面を左右に分けるだけ。カードは増やさない。 */
-  .cols { display:grid; grid-template-columns:1fr 1fr; gap:0 22px; margin-top:6px; }
-  .col { min-width:0; }
-  .col + .col { border-left:1px solid var(--line); padding-left:22px; }
-  .col-h { display:flex; align-items:baseline; gap:8px; padding:8px 0 7px; border-bottom:1px solid var(--line);
-    font-size:12px; font-weight:700; color:var(--ink2); letter-spacing:.04em; }
-  .col-h .ro { font-size:11px; font-weight:400; color:var(--ink3); }
-  .col .sec:first-of-type { margin-top:12px; }
-  @media (max-width:719px) {
-    .cols { grid-template-columns:1fr; gap:0; }
-    .col + .col { border-left:0; padding-left:0; margin-top:22px; }
-  }
+  /* 共有ボード。役割ごとに4枚を、ビジョン → タスク → アウトプット → 相談 の順に並べる。
+     左右の意味は入れ替えない（どの欄を誰が書くかは役割で決まっている）。 */
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:20px 22px; margin-top:10px; align-items:start; }
+  .card { min-width:0; border-left:3px solid var(--line); padding-left:11px; }
+  .card[data-v="ceo"] { border-left-color:var(--ceo); }
+  .card[data-v="mgr"] { border-left-color:var(--mgr); }
+  .card-h { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding-bottom:2px; }
+  .card-t { font-size:17px; font-weight:700; margin:0; }
+  .card-w { font-size:11px; color:var(--ink2); }
+  .card-w .ro { margin-left:4px; }
+  @media (max-width:719px) { .cards { grid-template-columns:1fr; gap:20px; } }
+
+  /* ビジョンは一覧性を優先して1行だけ出す。押すと全文、もう一度押すと1行へ戻る。 */
+  .btxt.foldable { cursor:pointer; }
+  .btxt.clip { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* × と取り違えないよう、色を濃くして間隔をあける（× は消す＝赤、こちらは表示の切り替え） */
+  .blk .fold { flex:none; align-self:flex-start; margin:9px 10px 0 0; min-width:30px; height:30px;
+    border:0; border-radius:3px; background:transparent; color:var(--ink2); font-size:15px;
+    line-height:1; padding:0; }
+  .blk .fold:hover { background:#F1F2EC; color:var(--ink); }
+  /* アウトプットの「だれが・いつ」。行の下へ小さく折り返す。 */
+  .meta { flex:0 0 100%; padding:0 10px 8px 32px; font-size:11px; color:var(--ink2); }
 
   .sec { margin-top:20px; border-left:3px solid var(--line); padding-left:11px; }
   .sec[data-v="ceo"] { border-left-color:var(--ceo); }
@@ -86,7 +96,8 @@
   .blk { display:flex; align-items:flex-start; flex-wrap:wrap; }
   .blk + .blk { border-top:1px solid #E2E4DC; }
   .blk:focus-within { background:#F1F2EC; box-shadow:inset 3px 0 0 var(--ceo); }
-  .sec[data-v="mgr"] .blk:focus-within { box-shadow:inset 3px 0 0 var(--mgr); }
+  .sec[data-v="mgr"] .blk:focus-within,
+  .card[data-v="mgr"] .blk:focus-within { box-shadow:inset 3px 0 0 var(--mgr); }
   .blk.dragging { opacity:.4; }
   .grip { flex:none; align-self:stretch; width:32px; min-height:44px; border:0; background:transparent;
     padding:0; color:var(--ink3); font-size:15px; line-height:1; cursor:grab; touch-action:none;
@@ -116,8 +127,9 @@
     .vline { gap:12px; }
     .vline button { min-height:44px; padding:0 14px; }
     .grip { width:44px; }
-    .bx { min-width:44px; height:44px; margin-top:4px; }
+    .bx, .blk .fold { min-width:44px; height:44px; margin-top:4px; }
     .ask { padding-left:44px; gap:18px; }
+    .meta { padding-left:44px; }
     .ask button { min-height:44px; padding:0 12px; }
   }
 
@@ -175,6 +187,7 @@
   .fac-d { font-size:11px; color:var(--ink3); }
   .fac .note { border:0; border-radius:0; margin:0; }
   .fac .hint { margin:0; padding:8px 12px 0; font-size:12px; color:var(--ink2); line-height:1.6; }
+  .card .hint { margin:0; padding:6px 0 0; font-size:12px; color:var(--ink2); line-height:1.6; }
 
   /* 課題・対応事項の一覧。内容・担当・状態だけ。 */
   .tasks { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; }
@@ -284,7 +297,7 @@ var FIREBASE_CONFIG = {
   var gotRooms = false, gotMembers = false;   /* 部屋と名簿の初回が届いたか */
 
   var ui = { tab: "board", room: "", saving: "",
-             newId: {}, confirmDel: "", fresh: {}, focusAdd: false,
+             newId: {}, confirmDel: "", fresh: {}, focusAdd: false, open: {},
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
              settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
              invite: false, gateErr: "", msg: "", showUrl: "" };
@@ -306,7 +319,8 @@ var FIREBASE_CONFIG = {
   function owns(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
   function nameOfUid(u) {
     if (me && u === me.uid) return me.name || "自分";
-    var m = members[u];
+    /* obj[key] は constructor などの継承分でも真になる。必ず owns() を通す */
+    var m = owns(members, u) ? members[u] : null;
     return (m && m.name) || "だれか";
   }
   function room() { return rooms[ui.room] || null; }
@@ -342,34 +356,31 @@ var FIREBASE_CONFIG = {
     return ns.join("、");
   }
 
-  /* 共有ボードは1つの画面。左に「自分側」、右に「相手側」を並べる。
-     どちらが自分かはログインした人で入れ替わる（同じURL・同じ中身を双方が見る）。
-     どの欄を誰が書いたかは欄で決まっている（ceoMind/toManager は社長、toCeo/mgrAsk は現場側）。
-     見出しは閲覧者から見た向きで組み立てる（本人が自分を三人称で呼ばないように）。 */
-  function sections() {
-    var ceo  = isCeo();
-    var you  = partyLabel(false);   /* 社長から見た相手（現場側） */
-    var boss = partyLabel(true);    /* 現場から見た相手（社長） */
-    var ceoSecs = [
-      { key: "ceoMind", voice: "ceo",
-        title: ceo ? "わたしのビジョン" : (boss ? boss + "のビジョン" : "ビジョン"),
-        ph: "いま頭にあることを書く" },
-      { key: "toManager", voice: "ceo",
-        title: ceo ? (you ? you + "への指針" : "指針") : (boss ? boss + "からの指針" : "指針"),
-        ph: "伝えておきたいことを書く" }
-    ];
-    var mgrSecs = [
-      { key: "toCeo", voice: "mgr",
-        title: ceo ? (you ? you + "からの報告" : "現場からの報告") : (boss ? boss + "への報告" : "報告"),
-        ph: "いま起きていることを書く" },
-      { key: "mgrAsk", voice: "mgr",
-        title: ceo ? (you ? you + "からの相談" : "現場からの相談") : (boss ? boss + "への相談" : "相談"),
+  /* 共有ボードは1つの画面。役割ごとに4枚を並べる。
+     どの欄を誰が書くかは**欄で決まっている**ので、見る人によって左右が入れ替わることはない。
+
+       ビジョン    ceoMind    社長が書く。現場は読むだけ。1行に畳んで一覧性を優先する
+       タスク      toManager  社長が書く。やってほしいこと・確認してほしいこと（旧「指針」）
+       アウトプット toCeo      現場が書く。やったこと・対応した結果（旧「報告」）
+       相談        mgrAsk     現場が書く。判断してほしいこと
+
+     ⚠ DB のキーは旧名のまま。表示名だけを変えている（既存データをそのまま見せるため）。
+     キーを変えると本番の既存データが読めなくなるので、改名してはならない。 */
+  function cards() {
+    var ceo = isCeo();
+    var mine = "あなた";
+    var ceoWho = ceo ? mine : (partyLabel(true) || "社長");
+    var mgrWho = ceo ? (partyLabel(false) || "現場") : mine;
+    return [
+      { key: "ceoMind",   voice: "ceo", title: "ビジョン",     who: ceoWho, write: ceo,
+        fold: true, ph: "いま頭にあることを書く" },
+      { key: "toManager", voice: "ceo", title: "タスク",       who: ceoWho, write: ceo,
+        ph: "やってほしいこと・確認してほしいことを書く" },
+      { key: "toCeo",     voice: "mgr", title: "アウトプット", who: mgrWho, write: !ceo,
+        meta: true, ph: "やったこと・対応した結果を書く" },
+      { key: "mgrAsk",    voice: "mgr", title: "相談",         who: mgrWho, write: !ceo,
         ph: "判断してほしいことを書く" }
     ];
-    var mineWho = (me && me.name) ? me.name + "さん" : "自分";
-    return ceo
-      ? { mine: ceoSecs, theirs: mgrSecs, mineWho: mineWho, theirsWho: you || "現場" }
-      : { mine: mgrSecs, theirs: ceoSecs, mineWho: mineWho, theirsWho: boss || "社長" };
   }
 
   /* ---------- 小道具 ---------- */
@@ -427,9 +438,16 @@ var FIREBASE_CONFIG = {
      DB 由来の値（fac:<id> など）は saveField 側で3つのリテラルへ丸めている。 */
   function saveBoard(key, wait) {
     var rid = ui.room; if (!rid || !rooms[rid]) return;
-    var snap = JSON.parse(JSON.stringify(arrFor(key)));
+    /* 部屋（rid）は予約した時点で固定する。発火までに部屋を切り替えても、
+       別の部屋へ書いて元の部屋を全消去しないため。
+       ただし**中身は発火する瞬間に取り直す**。予約時点で固めると、待っている 700ms の間に
+       届いた他の人の行を巻き添えにして消す（アウトプットと相談は複数人が同じ欄へ書く）。 */
     queue("board:" + rid + ":" + key, function () {
-      return rtdb.ref("rooms/" + rid + "/board/" + key).set(snap);
+      var r = rooms[rid];
+      if (!r) return Promise.resolve();          /* 部屋が消えていたら書かない */
+      var live = (r.board && r.board[key]) || [];
+      return rtdb.ref("rooms/" + rid + "/board/" + key)
+        .set(JSON.parse(JSON.stringify(live)));
     }, wait, key);
   }
   function saveField(key, wait) {
@@ -488,7 +506,8 @@ var FIREBASE_CONFIG = {
      views は親に .read を置かないので、あいことばを知らない人は1件も取り出せない。
      部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。 */
 
-  /* 閲覧リンクへ載せてよい欄。viewPayload() の外に置いて、画面側の変更と連動させない。 */
+  /* 閲覧リンクへ載せてよい欄（ビジョンとタスク）。
+     viewPayload() の外に置いて、画面側の変更と連動させない。 */
   var VIEW_KEYS = { ceoMind: 1, toManager: 1 };
 
   function newToken() {
@@ -504,19 +523,6 @@ var FIREBASE_CONFIG = {
   function viewUrl(tk) {
     return location.origin + location.pathname.replace(/[^\/]*$/, "") + "view.html#" + tk;
   }
-  /* その部屋にいる社長の呼び名。見出しを閲覧者から見た向きにするために使う。 */
-  function bossLabel(rid, who) {
-    var r = rooms[rid] || {}, ns = [];
-    Object.keys(r.members || {}).forEach(function (u) {
-      if (u === who) return;
-      var m = members[u];
-      if (!m || m.role !== "ceo") return;
-      var n = m.name || conf.ceoName || "";
-      if (n) ns.push(n + "さん");
-    });
-    if (!ns.length && conf.ceoName) ns.push(conf.ceoName + "さん");
-    return ns.join("、");
-  }
   /* 見せてよいものだけを組み立てる。
      UID・メールアドレス・他の人・その人がいない部屋・画面に出していない欄は入れない。 */
   function viewPayload(who) {
@@ -527,13 +533,13 @@ var FIREBASE_CONFIG = {
     myRooms().forEach(function (rid) {
       var r = rooms[rid];
       if (!r || !owns(r.members, who) || r.members[who] !== true) return;   /* その人がいる部屋だけ */
-      var boss = bossLabel(rid, who), b = r.board || {};
-      /* ⚠ ここは許可リストである。画面の欄を組み立てる sections() と共通化してはならない。
-         共通化すると、ログインなしで読める views/{token} へ報告・相談まで流れ出る。
-         閲覧リンクに載せるのはビジョンと指針だけ、という意図的な線引き。 */
+      var b = r.board || {};
+      /* ⚠ ここは許可リストである。画面の欄を組み立てる cards() と共通化してはならない。
+         共通化すると、ログインなしで読める views/{token} へアウトプット・相談まで流れ出る。
+         閲覧リンクに載せるのはビジョンとタスクだけ、という意図的な線引き。 */
       var secs = [
-        { key: "ceoMind",   title: boss ? boss + "のビジョン" : "ビジョン" },
-        { key: "toManager", title: boss ? boss + "からの指針" : "指針" }
+        { key: "ceoMind",   title: "ビジョン" },
+        { key: "toManager", title: "タスク" }
       ].filter(function (x) { return VIEW_KEYS[x.key] === 1; }).map(function (x) {
         return {
           title: x.title,
@@ -661,7 +667,7 @@ var FIREBASE_CONFIG = {
   }
   var STAT_LABEL = { todo: "未対応", doing: "対応中", done: "完了" };
 
-  function fac(id) { return field.facilities.filter(function (f) { return f.id === id; })[0]; }
+  function fac(id) { return field.facilities.filter(function (f) { return f && f.id === id; })[0]; }
   function facName(id) { var f = fac(id); return f ? f.name : ""; }
   function arrFor(key) {
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (!f) return []; if (!f.items) f.items = []; return f.items; }
@@ -712,6 +718,7 @@ var FIREBASE_CONFIG = {
     if (!val) return false;
     arrFor(key).push({ by: me.uid, createdAt: now(), id: id, text: val });
     ui.fresh[pkOf(key, id)] = true;
+    ui.open[pkOf(key, id)] = true;      /* 作ったばかりの行は開いたままにする */
     if (ui.newId[key] === id) delete ui.newId[key];
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.updatedAt = now(); }
     saveFor(key, 700);
@@ -726,14 +733,15 @@ var FIREBASE_CONFIG = {
     var p = edit.pk.split("|"), key = p[0], id = p.slice(1).join("|");
     var o = find(key, id), gone = false;
     if (o && !String(o.text == null ? "" : o.text).trim() && ui.fresh[edit.pk]) {
-      setArr(key, arrFor(key).filter(function (x) { return x.id !== id; }));
+      setArr(key, arrFor(key).filter(function (x) { return !x || x.id !== id; }));
       delete ui.fresh[edit.pk];
       edit = null; gone = true;
     }
     if (o) saveFor(key, 0);
     return gone;
   }
-  function find(key, id) { return arrFor(key).filter(function (x) { return x.id === id; })[0]; }
+  /* 壊れた行（null）が混ざっていても落ちないようにする */
+  function find(key, id) { return arrFor(key).filter(function (x) { return x && x.id === id; })[0]; }
 
   /* ---------- 入口 ---------- */
   function gateHtml() {
@@ -815,7 +823,7 @@ var FIREBASE_CONFIG = {
     var ids = myRooms();
     if (ids.length && !rooms[ui.room]) ui.room = ids[0];
 
-    var SEC = sections();
+    var CARDS = cards();
     var stale = field.cases.filter(function (c) { return stat(c) !== "done" && now() - c.updatedAt > 7 * DAY; });
     var cold = field.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
     var alerts = stale.length + cold.length;
@@ -846,7 +854,7 @@ var FIREBASE_CONFIG = {
     if (ui.settings && isCeo()) h += settingsHtml();
 
     if (ui.tab === "board") {
-      h += ids.length ? boardHtml(SEC)
+      h += ids.length ? boardHtml(CARDS)
         : '<p class="empty">まだどの部屋にも入っていません。社長に入れてもらってください。</p>';
     } else h += fieldHtml(stale, cold);
 
@@ -959,14 +967,57 @@ var FIREBASE_CONFIG = {
     return h + "</div>";
   }
 
-  /* ノートの中の1ブロック。書ける人にはつまみ・本文・消すボタンを出す。 */
-  function blkHtml(key, it, canEdit, label) {
+  /* 「だれが・いつ」。アウトプットの行にだけ出す。
+     ⚠ by と createdAt は書いた人の自己申告で、DB のルールでは縛れない
+     （board はリストごと置き換えるので、by === auth.uid を .validate で強制すると
+       他人の行を含むリストが書けなくなる）。
+     そのため、せめて**その部屋にいない人の名前は出さない**。
+     同じ部屋のメンバー同士の名乗りは UI 層でしか担保できない（AGENTS.md の既知事項）。 */
+  function stamp(ts) {
+    if (typeof ts !== "number" || !isFinite(ts) || ts <= 0) return "";
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    /* 年をまたいだ古い行が「今年のもの」に見えないよう、違う年なら年も出す */
+    var y = d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + "/" : "";
+    return y + (d.getMonth() + 1) + "/" + d.getDate() + " " +
+      d.getHours() + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
+  function posterName(u) {
+    if (me && u === me.uid) return me.name || "自分";
+    var r = room();
+    if (!u || !r || !owns(r.members || {}, u) || r.members[u] !== true) return "だれか";
+    return nameOfUid(u);
+  }
+  function metaHtml(it) {
+    var t = stamp(it.createdAt);
+    return '<div class="meta">' + esc(posterName(it.by)) +
+      (t ? " ・ " + esc(t) : "") + "</div>";
+  }
+
+  /* ノートの中の1ブロック。書ける人にはつまみ・本文・消すボタンを出す。
+     opt = { label, fold, meta }
+     畳む欄（ビジョン）は、開くまで本文を1行だけ出す。編集も開いてから。 */
+  function blkHtml(key, it, canEdit, opt) {
     var pk = pkOf(key, it.id), txt = shownText(key, it);
+    /* いま打っている行は畳まない。畳むと <p> に変わってフォーカスが外れ、
+       そのあとの打鍵がどこにも入らずに消える（新しく作った行で起きる）。 */
+    var open = !opt.fold || ui.open[pk] === true || !!(edit && edit.pk === pk && edit.live);
+    var meta = opt.meta ? metaHtml(it) : "";
+    var body;
+    if (!open || !canEdit) {
+      /* 読むだけの行と、畳んでいる行は <p> で出す。畳む欄なら押して開け閉めできる。 */
+      body = '<p class="btxt' + (opt.fold ? " foldable" : "") + (open ? "" : " clip") + '"' +
+        (opt.fold ? ' data-act="fold" data-fold="' + esc(pk) +
+          '" title="' + esc(open ? "1行にたたむ" : txt) + '"' : "") +
+        ">" + esc(txt) + "</p>";
+    } else {
+      body = taHtml(pk, key, it.id, txt, "", opt.label);
+    }
     if (!canEdit) {
       /* 動かせないが、並べ替えの対応付けには id が要る */
       return '<div class="blk" data-id="' + esc(it.id) + '" data-list="' + esc(key) + '">' +
-        '<span class="grip ghost" aria-hidden="true"></span>' +
-        '<p class="btxt">' + esc(txt) + "</p></div>";
+        '<span class="grip ghost" aria-hidden="true"></span>' + body +
+        foldBtnHtml(opt, pk, open) + meta + "</div>";
     }
     var ask = "";
     if (ui.confirmDel === pk) {
@@ -979,10 +1030,22 @@ var FIREBASE_CONFIG = {
     return '<div class="blk" data-id="' + esc(it.id) + '" data-list="' + esc(key) + '">' +
       '<button class="grip" type="button" tabindex="-1" data-grip title="つかんで上下に動かす" ' +
         'aria-label="順番を変える">⣿</button>' +
-      taHtml(pk, key, it.id, txt, "", label) +
+      body + foldBtnHtml(opt, pk, open) +
       '<button class="bx" type="button" data-act="askdel" data-list="' + esc(key) + '" data-id="' +
         esc(it.id) + '" title="この行を消す" aria-label="この行を消す">×</button>' +
-      ask + "</div>";
+      meta + ask + "</div>";
+  }
+
+  /* 開け閉めのボタン。畳んでいるときも出す。
+     ・畳んだ行は本文を押しても開けるが、それだけだと「押せる」と分からないし、
+       キーボードだけの人は開けない
+     ・開いた行が textarea のときは本文を押しても畳めないので、このボタンが唯一の手段 */
+  function foldBtnHtml(opt, pk, open) {
+    if (!opt.fold) return "";
+    var lab = open ? "1行にたたむ" : "全文を出す";
+    return '<button class="fold" type="button" data-act="fold" data-fold="' + esc(pk) +
+      '" title="' + lab + '" aria-label="' + lab + '" aria-expanded="' + (open ? "true" : "false") +
+      '">' + (open ? "⌃" : "⌄") + "</button>";
   }
 
   /* textarea は先頭の改行が食われるので1つ足しておく */
@@ -992,12 +1055,19 @@ var FIREBASE_CONFIG = {
       (txt.charAt(0) === "\n" ? "\n" : "") + esc(txt) + "</textarea>";
   }
 
+  /* 画面に出せる行だけを返す。DB は中身を検証しないので null や id の無い行が混ざりうる。
+     そのまま扱うと canEditItem(it) の it.by で落ち、render ごと止まって画面が固まる。
+     ⚠ 落としているのは画面だけ。DB のデータには触らない。 */
+  function rowsOf(key) {
+    return arrFor(key).filter(function (it) { return it && it.id; });
+  }
+
   /* 1項目＝1枚のノート。中身が増えてもカードは増やさない。
      opt = { canAdd, canEdit(it), label, ph } */
   function noteHtml(key, opt) {
-    var items = arrFor(key);
+    var items = rowsOf(key);
     var h = '<div class="note" data-note="' + esc(key) + '">';
-    items.forEach(function (it) { h += blkHtml(key, it, opt.canEdit(it), opt.label); });
+    items.forEach(function (it) { h += blkHtml(key, it, opt.canEdit(it), opt); });
     if (opt.canAdd) {
       var nid = newId(key), pk = pkOf(key, nid);
       h += '<div class="blk" data-new="1" data-id="' + esc(nid) + '" data-list="' + esc(key) + '">' +
@@ -1039,33 +1109,30 @@ var FIREBASE_CONFIG = {
     grow(wrap.querySelector("textarea"));
   }
 
-  function boardHtml(S) {
-    return '<div class="cols">' + colHtml(S.mine, S.mineWho, true) +
-      colHtml(S.theirs, S.theirsWho, false) + "</div>";
+  function boardHtml(list) {
+    return '<div class="cards">' + list.map(cardHtml).join("") + "</div>";
   }
-  /* 1列ぶん。書き足せるのは自分側だけ。相手側は読むだけ。
+  /* 1枚ぶん。書き足せるのはその役割の人だけ。もう一方は読むだけ。
      人が書いた行を直す・消せるのは本人と社長だけにする（施設メモと同じ規則）。
-     同じ部屋に現場側が2人いるとき、互いの報告・相談を黙って書き換えられないようにするため。 */
-  function colHtml(secs, who, canWrite) {
-    var h = '<div class="col"><div class="col-h"><span>' + esc(who) + "</span>" +
-      (canWrite ? "" : '<span class="ro">読むだけ</span>') + "</div>";
-    secs.forEach(function (s) {
-      var canEditItem = function (it) { return canWrite && (isCeo() || (me && it.by === me.uid)); };
-      h += '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
-        '<h2 class="sec-t">' + esc(s.title) + "</h2></div>";
-      if (!canWrite && !arrFor(s.key).length) {
-        h += '<p class="empty">まだ何も書かれていません。</p></section>';
-        return;
-      }
-      if (canWrite && arrFor(s.key).some(function (it) { return !canEditItem(it); })) {
-        h += '<p class="hint">自分が書いた行だけ直せます。</p>';
-      }
-      h += noteHtml(s.key, {
-        canAdd: canWrite, canEdit: canEditItem,
-        label: s.title, ph: s.ph
-      }) + "</section>";
-    });
-    return h + "</div>";
+     同じ部屋に現場側が2人いるとき、互いの投稿を黙って書き換えられないようにするため。 */
+  function cardHtml(c) {
+    var canWrite = !!c.write;
+    var canEditItem = function (it) { return canWrite && (isCeo() || (me && it.by === me.uid)); };
+    var h = '<section class="card" data-v="' + esc(c.voice) + '"><div class="card-h">' +
+      '<h2 class="card-t">' + esc(c.title) + "</h2>" +
+      '<span class="card-w">' + esc(c.who) + "が書く" +
+      (canWrite ? "" : '<span class="ro">（あなたは読むだけ）</span>') + "</span></div>";
+    var rows = rowsOf(c.key);
+    if (!canWrite && !rows.length) {
+      return h + '<p class="empty">まだ何も書かれていません。</p></section>';
+    }
+    if (canWrite && rows.some(function (it) { return !canEditItem(it); })) {
+      h += '<p class="hint">自分が書いた行だけ直せます。</p>';
+    }
+    return h + noteHtml(c.key, {
+      canAdd: canWrite, canEdit: canEditItem, label: c.title, ph: c.ph,
+      fold: !!c.fold, meta: !!c.meta
+    }) + "</section>";
   }
 
   function fieldHtml(stale, cold) {
@@ -1093,7 +1160,7 @@ var FIREBASE_CONFIG = {
       h += addHtml("facilities", "施設を追加", "施設名") + "</div>";
     }
 
-    var shown = field.facilities.filter(function (f) { return !ui.pick || f.id === ui.pick; });
+    var shown = field.facilities.filter(function (f) { return f && (!ui.pick || f.id === ui.pick); });
 
     shown.forEach(function (f) {
       var key = "fac:" + f.id;
@@ -1243,7 +1310,7 @@ var FIREBASE_CONFIG = {
     else if (act === "room") {
       flushSaves();                       /* 前の部屋の保存を先に出しきる */
       failed = {}; failMsg = "";           /* 前の部屋の失敗表示は持ち越さない */
-      ui.room = id; ui.confirmDel = ""; edit = null; ui.newId = {}; ui.fresh = {};
+      ui.room = id; ui.confirmDel = ""; edit = null; ui.newId = {}; ui.fresh = {}; ui.open = {};
     }
     else if (act === "settings") ui.settings = !ui.settings;
     else if (act === "invite") ui.invite = !ui.invite;
@@ -1443,12 +1510,17 @@ var FIREBASE_CONFIG = {
       var pk = pkOf(list, id);
       ui.confirmDel = ui.confirmDel === pk ? "" : pk;
     }
+    else if (act === "fold") {
+      var fk = b.getAttribute("data-fold");
+      if (fk) { if (owns(ui.open, fk)) delete ui.open[fk]; else ui.open[fk] = true; }
+    }
     else if (act === "nodel") { ui.confirmDel = ""; }
     else if (act === "dodel") {
       ui.confirmDel = "";
-      setArr(list, arrFor(list).filter(function (x) { return x.id !== id; }));
+      setArr(list, arrFor(list).filter(function (x) { return !x || x.id !== id; }));
       if (edit && edit.pk === pkOf(list, id)) edit = null;
       delete ui.fresh[pkOf(list, id)];
+      delete ui.open[pkOf(list, id)];
       saveFor(list, 0);
     }
     else if (act === "del") {
@@ -1456,7 +1528,7 @@ var FIREBASE_CONFIG = {
       var label = target ? (target.text || target.name || target.title || "") : "";
       if (label.length > 24) label = label.slice(0, 24) + "…";
       if (!confirm("「" + label + "」を削除します。元に戻せません。よろしいですか？")) return;
-      setArr(list, arrFor(list).filter(function (x) { return x.id !== id; }));
+      setArr(list, arrFor(list).filter(function (x) { return !x || x.id !== id; }));
       if (list === "facilities" && ui.pick === id) ui.pick = "";
       saveFor(list);
     }
@@ -1665,7 +1737,7 @@ var FIREBASE_CONFIG = {
     ids.forEach(function (id) { if (seen[id]) ok = false; seen[id] = 1; });
     if (ok) {
       var next = ids.map(function (id) {
-        return arr.filter(function (x) { return x.id === id; })[0];
+        return arr.filter(function (x) { return x && x.id === id; })[0];
       });
       /* 画面と中身の対応が取れたときだけ確定する（並べ替えで行を失わない） */
       if (next.indexOf(undefined) < 0 && ids.join("\u0001") !== was) {
@@ -1719,7 +1791,7 @@ var FIREBASE_CONFIG = {
     ui.saving = ""; failed = {}; failMsg = "";
     if (!u) {
       me = null; members = {}; viewLinks = {}; viewSent = {};
-      gotRooms = false; gotMembers = false;
+      gotRooms = false; gotMembers = false; ui.open = {};
       stopViewTimer(); dropViewSub(); unwatchAll(); render(); return;
     }
     rtdb.ref("members/" + u.uid).on("value", function (snap) {
