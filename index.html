@@ -17,6 +17,8 @@
   body { font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif;
     color:var(--ink); -webkit-font-smoothing:antialiased; padding-bottom:48px; }
   #app { max-width:640px; margin:0 auto; }
+  /* 共有ボードだけ左右2列にするので広くする。他のタブは今までどおりの幅。 */
+  #app.wide { max-width:920px; }
   button { font-family:inherit; cursor:pointer; }
   :focus-visible { outline:2px solid var(--ceo); outline-offset:2px; }
 
@@ -54,6 +56,19 @@
   .body { padding:4px 14px 0; }
   .notice { margin-top:14px; border:1px solid var(--warn); border-radius:4px; background:var(--surface);
     padding:10px 12px; font-size:13px; line-height:1.7; color:var(--ink2); }
+  /* 共有ボード。1つの画面を左右に分けるだけ。カードは増やさない。 */
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:0 22px; margin-top:6px; }
+  .col { min-width:0; }
+  .col + .col { border-left:1px solid var(--line); padding-left:22px; }
+  .col-h { display:flex; align-items:baseline; gap:8px; padding:8px 0 7px; border-bottom:1px solid var(--line);
+    font-size:12px; font-weight:700; color:var(--ink2); letter-spacing:.04em; }
+  .col-h .ro { font-size:11px; font-weight:400; color:var(--ink3); }
+  .col .sec:first-of-type { margin-top:12px; }
+  @media (max-width:719px) {
+    .cols { grid-template-columns:1fr; gap:0; }
+    .col + .col { border-left:0; padding-left:0; margin-top:22px; }
+  }
+
   .sec { margin-top:20px; border-left:3px solid var(--line); padding-left:11px; }
   .sec[data-v="ceo"] { border-left-color:var(--ceo); }
   .sec[data-v="mgr"] { border-left-color:var(--mgr); }
@@ -71,6 +86,7 @@
   .blk { display:flex; align-items:flex-start; flex-wrap:wrap; }
   .blk + .blk { border-top:1px solid #E2E4DC; }
   .blk:focus-within { background:#F1F2EC; box-shadow:inset 3px 0 0 var(--ceo); }
+  .sec[data-v="mgr"] .blk:focus-within { box-shadow:inset 3px 0 0 var(--mgr); }
   .blk.dragging { opacity:.4; }
   .grip { flex:none; align-self:stretch; width:32px; min-height:44px; border:0; background:transparent;
     padding:0; color:var(--ink3); font-size:15px; line-height:1; cursor:grab; touch-action:none;
@@ -115,7 +131,10 @@
     border:1px solid var(--line); border-radius:3px; background:var(--surface); color:var(--ink); }
   .pick button { background:none; border:0; font-size:12px; color:var(--ink3); padding:0; white-space:nowrap; }
 
-  .panel { margin-top:10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); padding:12px; }
+  /* 共有ボードのときだけ #app が広くなるが、設定・部屋作成のパネルは広げない。
+     名前と「止める」が離れすぎて、行を取り違えて押す事故を防ぐため。 */
+  .panel { margin-top:10px; border:1px solid var(--line); border-radius:4px; background:var(--surface);
+    padding:12px; max-width:640px; }
   .panel h3 { margin:0 0 4px; font-size:13px; font-weight:700; }
   .panel p { margin:0 0 8px; font-size:12px; color:var(--ink2); line-height:1.7; }
   .pline { display:flex; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
@@ -143,6 +162,43 @@
   .fac-d { font-size:11px; color:var(--ink3); }
   .fac .note { border:0; border-radius:0; margin:0; }
   .fac .hint { margin:0; padding:8px 12px 0; font-size:12px; color:var(--ink2); line-height:1.6; }
+
+  /* 課題・対応事項の一覧。内容・担当・状態だけ。 */
+  .tasks { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; }
+  .thead, .task { display:grid; grid-template-columns:1fr 108px 92px 30px; gap:0 10px; align-items:center;
+    padding:7px 10px; }
+  .thead { font-size:11px; color:var(--ink3); border-bottom:1px solid var(--line); }
+  .task + .task { border-top:1px solid #E2E4DC; }
+  .task.is-done .t-in { color:var(--ink3); }
+  .task .tag { grid-column:1 / -1; padding-bottom:2px; }
+  /* 収まらないときは「…」で切れていることを示す。全文は title（ホバー）と、
+     その欄を選んだときのスクロールで読める。 */
+  .t-in { width:100%; min-width:0; border:0; border-bottom:1px dashed transparent; background:transparent;
+    font-family:inherit; font-size:14px; line-height:1.6; color:var(--ink); padding:4px 0;
+    text-overflow:ellipsis; }
+  .t-in:focus { outline:none; border-bottom-color:var(--ink); }
+  .t-in::placeholder { color:var(--ink3); }
+  .t-st { font-family:inherit; font-size:12px; padding:5px 2px; border:1px solid var(--line);
+    border-radius:3px; background:var(--paper); color:var(--ink); }
+  .t-del { border:0; background:none; padding:0; font-size:14px; color:var(--ink3); }
+  .t-del:hover { color:var(--bad); }
+  @media (max-width:560px) {
+    .thead { display:none; }
+    /* スマホは縦に折り返す。内容を1行使い、その下に担当・状態・削除を並べる。 */
+    .task { display:flex; flex-wrap:wrap; align-items:center; gap:5px 10px; padding:9px 10px; }
+    .task .tag { flex:1 1 100%; }
+    .t-name { flex:1 1 100%; }
+    .t-who { flex:1 1 90px; min-width:0; }
+    .t-st { flex:0 0 auto; min-height:36px; }
+    .t-del { flex:0 0 30px; min-height:36px; }
+    /* iOS は 16px 未満の入力へ触れると勝手に拡大する。狭い画面では 16px にする。 */
+    .t-in { font-size:16px; }
+  }
+  @media (max-width:480px) {
+    /* ノートの × や ⣿ と同じ大きさに揃える */
+    .t-st { min-height:44px; }
+    .t-del { flex:0 0 44px; min-height:44px; }
+  }
 
   .row { background:var(--surface); border:1px solid var(--line); border-radius:4px; margin-top:8px; padding:10px 12px; }
   .row.stale { border-color:var(--bad); }
@@ -273,24 +329,34 @@ var FIREBASE_CONFIG = {
     return ns.join("、");
   }
 
+  /* 共有ボードは1つの画面。左に「自分側」、右に「相手側」を並べる。
+     どちらが自分かはログインした人で入れ替わる（同じURL・同じ中身を双方が見る）。
+     どの欄を誰が書いたかは欄で決まっている（ceoMind/toManager は社長、toCeo/mgrAsk は現場側）。
+     見出しは閲覧者から見た向きで組み立てる（本人が自分を三人称で呼ばないように）。 */
   function sections() {
     var ceo  = isCeo();
     var you  = partyLabel(false);   /* 社長から見た相手（現場側） */
     var boss = partyLabel(true);    /* 現場から見た相手（社長） */
-    /* 見出しは閲覧者から見た向きで組み立てる（本人が自分を三人称で呼ばないように）。 */
-    var vision = ceo ? "わたしのビジョン" : (boss ? boss + "のビジョン" : "ビジョン");
-    var guide  = ceo ? (you ? you + "への指針" : "指針")
-                     : (boss ? boss + "からの指針" : "指針");
-    /* 画面に出すのは「ビジョン」と「指針」だけ。どちらも社長が書き、現場側は読む欄。
-       報告(toCeo)・相談(mgrAsk) は UI から外すが、データは消さず残したままにする。
-       保存は rooms/{rid}/board/{key} と欄ごとに書くので、この2キーには一切触れない。 */
-    var locked = (boss || "社長") + "が書く場所です。読むだけの欄です。";
-    return [
-      { key: "ceoMind", voice: "ceo", title: vision, locked: locked,
+    var ceoSecs = [
+      { key: "ceoMind", voice: "ceo",
+        title: ceo ? "わたしのビジョン" : (boss ? boss + "のビジョン" : "ビジョン"),
         ph: "いま頭にあることを書く" },
-      { key: "toManager", voice: "ceo", title: guide, locked: locked,
+      { key: "toManager", voice: "ceo",
+        title: ceo ? (you ? you + "への指針" : "指針") : (boss ? boss + "からの指針" : "指針"),
         ph: "伝えておきたいことを書く" }
     ];
+    var mgrSecs = [
+      { key: "toCeo", voice: "mgr",
+        title: ceo ? (you ? you + "からの報告" : "現場からの報告") : (boss ? boss + "への報告" : "報告"),
+        ph: "いま起きていることを書く" },
+      { key: "mgrAsk", voice: "mgr",
+        title: ceo ? (you ? you + "からの相談" : "現場からの相談") : (boss ? boss + "への相談" : "相談"),
+        ph: "判断してほしいことを書く" }
+    ];
+    var mineWho = (me && me.name) ? me.name + "さん" : "自分";
+    return ceo
+      ? { mine: ceoSecs, theirs: mgrSecs, mineWho: mineWho, theirsWho: you || "現場" }
+      : { mine: mgrSecs, theirs: ceoSecs, mineWho: mineWho, theirsWho: boss || "社長" };
   }
 
   /* ---------- 小道具 ---------- */
@@ -310,6 +376,22 @@ var FIREBASE_CONFIG = {
     try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
   }
   function toArr(v) { return Array.isArray(v) ? v : (v ? Object.keys(v).map(function (k) { return v[k]; }) : []); }
+  /* いま打っている最中の行を、届いたばかりの中身へ持ち越す。
+     以前は社長しか書かなかったので起きなかったが、双方が同じ部屋へ書くようになったため、
+     相手の更新が先に届くと「まだ保存が届いていない自分の行」が画面から消えてしまう。 */
+  function keepEditing(prev, next) {
+    if (!edit || !edit.live || !prev || !next) return next;
+    var p = edit.pk.split("|"), k = p[0], id = p.slice(1).join("|");
+    if (["ceoMind", "toCeo", "mgrAsk", "toManager"].indexOf(k) < 0) return next;
+    var nw = toArr(next[k]);
+    if (nw.filter(function (x) { return x && x.id === id; }).length) return next;
+    var was = toArr(prev[k]), at = -1, mine = null;
+    was.forEach(function (x, i) { if (x && x.id === id) { mine = x; at = i; } });
+    if (!mine) return next;
+    nw.splice(at < 0 || at > nw.length ? nw.length : at, 0, mine);
+    next[k] = nw;
+    return next;
+  }
   function normBoard(b) {
     b = b || {};
     var o = {};
@@ -340,9 +422,11 @@ var FIREBASE_CONFIG = {
   function saveField(key, wait) {
     /* 施設メモ（fac:<id>）は facilities の中にあるので、facilities ごと書く */
     var top = key && key.indexOf("fac:") === 0 ? "facilities" : key;
+    /* 知らない欄を渡されたら、field を丸ごと書いて他の人の更新を巻き添えにするより、
+       書かずに知らせる（上位ノードを丸ごと set() しない、という決まりを崩さないため）。 */
     if (top !== "facilities" && top !== "staff" && top !== "cases") {
-      var all = JSON.parse(JSON.stringify(field));
-      queue("field", function () { return rtdb.ref("field").set(all); }, wait, key);
+      ui.saving = "保存できません（対象が分かりません）";
+      paintStatus();
       return;
     }
     var snap = JSON.parse(JSON.stringify(field[top] || []));
@@ -391,6 +475,9 @@ var FIREBASE_CONFIG = {
      views は親に .read を置かないので、あいことばを知らない人は1件も取り出せない。
      部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。 */
 
+  /* 閲覧リンクへ載せてよい欄。viewPayload() の外に置いて、画面側の変更と連動させない。 */
+  var VIEW_KEYS = { ceoMind: 1, toManager: 1 };
+
   function newToken() {
     var c = window.crypto || window.msCrypto;
     if (!c || !c.getRandomValues) return "";    /* 当てられる乱数で作るくらいなら作らない */
@@ -428,10 +515,13 @@ var FIREBASE_CONFIG = {
       var r = rooms[rid];
       if (!r || !owns(r.members, who) || r.members[who] !== true) return;   /* その人がいる部屋だけ */
       var boss = bossLabel(rid, who), b = r.board || {};
+      /* ⚠ ここは許可リストである。画面の欄を組み立てる sections() と共通化してはならない。
+         共通化すると、ログインなしで読める views/{token} へ報告・相談まで流れ出る。
+         閲覧リンクに載せるのはビジョンと指針だけ、という意図的な線引き。 */
       var secs = [
         { key: "ceoMind",   title: boss ? boss + "のビジョン" : "ビジョン" },
         { key: "toManager", title: boss ? boss + "からの指針" : "指針" }
-      ].map(function (x) {
+      ].filter(function (x) { return VIEW_KEYS[x.key] === 1; }).map(function (x) {
         return {
           title: x.title,
           items: toArr(b[x.key])
@@ -550,6 +640,14 @@ var FIREBASE_CONFIG = {
     });
   }
 
+  /* 課題の状態。古いデータは done しか持っていないので、そこから読む。 */
+  function stat(c) {
+    var v = c && c.status;
+    if (v === "todo" || v === "doing" || v === "done") return v;
+    return (c && c.done) ? "done" : "todo";
+  }
+  var STAT_LABEL = { todo: "未対応", doing: "対応中", done: "完了" };
+
   function fac(id) { return field.facilities.filter(function (f) { return f.id === id; })[0]; }
   function facName(id) { var f = fac(id); return f ? f.name : ""; }
   function arrFor(key) {
@@ -564,6 +662,10 @@ var FIREBASE_CONFIG = {
     if (key.indexOf("fac:") === 0) { var f = fac(key.slice(4)); if (f) f.items = v; return; }
     if (key === "facilities" || key === "staff" || key === "cases") { field[key] = v; return; }
     board()[key] = v;
+  }
+  /* 画面から書き換えてよい項目。属性を細工されても by や id を上書きさせない。 */
+  function editableField(f) {
+    return ["title", "assignee", "name", "concern"].indexOf(f) >= 0;
   }
   function isFieldKey(k) {
     return k.indexOf("fac:") === 0 || k === "facilities" || k === "staff" || k === "cases";
@@ -676,7 +778,10 @@ var FIREBASE_CONFIG = {
   });
   function setHtml(h) {
     rendering = true;
-    document.getElementById("app").innerHTML = h;
+    var app = document.getElementById("app");
+    /* 共有ボードだけ左右2列にするので広くする */
+    app.className = (me && ui.tab === "board") ? "wide" : "";
+    app.innerHTML = h;
     rendering = false;
   }
 
@@ -698,7 +803,7 @@ var FIREBASE_CONFIG = {
     if (ids.length && !rooms[ui.room]) ui.room = ids[0];
 
     var SEC = sections();
-    var stale = field.cases.filter(function (c) { return !c.done && now() - c.updatedAt > 7 * DAY; });
+    var stale = field.cases.filter(function (c) { return stat(c) !== "done" && now() - c.updatedAt > 7 * DAY; });
     var cold = field.staff.filter(function (s) { return now() - (s.followedAt || 0) > 14 * DAY; });
     var alerts = stale.length + cold.length;
 
@@ -728,7 +833,8 @@ var FIREBASE_CONFIG = {
     if (ui.settings && isCeo()) h += settingsHtml();
 
     if (ui.tab === "board") {
-      h += ids.length ? boardHtml(SEC) : "";
+      h += ids.length ? boardHtml(SEC)
+        : '<p class="empty">まだどの部屋にも入っていません。社長に入れてもらってください。</p>';
     } else h += fieldHtml(stale, cold);
 
     h += "</div>";
@@ -925,22 +1031,33 @@ var FIREBASE_CONFIG = {
     grow(wrap.querySelector("textarea"));
   }
 
-  function boardHtml(SEC) {
-    return SEC.map(function (s) {
-      /* voice が "ceo" の欄は社長が、"mgr" の欄は現場側が書く */
-      var canWrite = (s.voice === "ceo") === isCeo();
-      var h = '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
+  function boardHtml(S) {
+    return '<div class="cols">' + colHtml(S.mine, S.mineWho, true) +
+      colHtml(S.theirs, S.theirsWho, false) + "</div>";
+  }
+  /* 1列ぶん。書き足せるのは自分側だけ。相手側は読むだけ。
+     人が書いた行を直す・消せるのは本人と社長だけにする（施設メモと同じ規則）。
+     同じ部屋に現場側が2人いるとき、互いの報告・相談を黙って書き換えられないようにするため。 */
+  function colHtml(secs, who, canWrite) {
+    var h = '<div class="col"><div class="col-h"><span>' + esc(who) + "</span>" +
+      (canWrite ? "" : '<span class="ro">読むだけ</span>') + "</div>";
+    secs.forEach(function (s) {
+      var canEditItem = function (it) { return canWrite && (isCeo() || (me && it.by === me.uid)); };
+      h += '<section class="sec" data-v="' + s.voice + '"><div class="sec-h">' +
         '<h2 class="sec-t">' + esc(s.title) + "</h2></div>";
-      if (!canWrite) {
-        h += '<p class="sec-d">' + esc(s.locked) + "</p>";
-        if (!arrFor(s.key).length) return h + '<p class="empty">まだ何も書かれていません。</p></section>';
+      if (!canWrite && !arrFor(s.key).length) {
+        h += '<p class="empty">まだ何も書かれていません。</p></section>';
+        return;
       }
-      return h + noteHtml(s.key, {
-        canAdd: canWrite,
-        canEdit: function () { return canWrite; },
+      if (canWrite && arrFor(s.key).some(function (it) { return !canEditItem(it); })) {
+        h += '<p class="hint">自分が書いた行だけ直せます。</p>';
+      }
+      h += noteHtml(s.key, {
+        canAdd: canWrite, canEdit: canEditItem,
         label: s.title, ph: s.ph
       }) + "</section>";
-    }).join("");
+    });
+    return h + "</div>";
   }
 
   function fieldHtml(stale, cold) {
@@ -989,25 +1106,47 @@ var FIREBASE_CONFIG = {
     });
 
     var match = function (x) { return !ui.pick || x.place === ui.pick; };
-    var open = field.cases.filter(function (c) { return !c.done && match(c); });
-    var done = field.cases.filter(function (c) { return c.done; });
-    h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">対応中の案件</h2>' +
+    /* 課題・対応事項。内容・担当・状態だけの一覧。 */
+    var list = field.cases.filter(match);
+    var open = list.filter(function (c) { return stat(c) !== "done"; });
+    /* 完了の件数と「まとめて消す」は、いま画面に出ている範囲だけを対象にする。
+       施設で絞っているときに、見えていない施設の分まで消さないため。 */
+    var done = list.filter(function (c) { return stat(c) === "done"; });
+    /* 完了は下へ寄せる。状態を変えた行が一覧から消えないように、同じ表に残す。 */
+    var shownCases = open.concat(list.filter(function (c) { return stat(c) === "done"; }));
+
+    h += '<section class="sec"><div class="sec-h"><h2 class="sec-t">課題・対応事項</h2>' +
       '<span class="sec-n">' + open.length + "件</span></div>";
-    open.forEach(function (c) {
-      var st = now() - c.updatedAt > 7 * DAY;
-      h += '<div class="row' + (st ? " stale" : "") + '"><div class="row-h">' +
-        '<span class="row-n">' + esc(c.title) + "</span>" +
-        (st ? '<span class="flag">止まっている</span>' : "") +
-        '<span class="row-d">' + ago(c.updatedAt) + "</span></div>" +
-        (c.place ? '<div class="tag">' + esc(facName(c.place)) + "</div>" : "") +
-        '<input class="inline" data-list="cases" data-id="' + esc(c.id) + '" data-field="next" value="' +
-        esc(c.next) + '" placeholder="次にすること">' +
-        '<div class="acts"><button data-act="bump" data-id="' + esc(c.id) + '">動いた</button>' +
-        '<button data-act="finish" data-id="' + esc(c.id) + '">完了</button>' +
-        '<button class="del" data-act="del" data-list="cases" data-id="' + esc(c.id) + '">削除</button></div></div>';
-    });
-    h += addHtml("cases", "案件を追加", "案件名");
-    if (done.length) h += '<p class="empty">完了した案件 ' + done.length +
+    if (shownCases.length) {
+      h += '<div class="tasks"><div class="thead"><span>内容</span><span>担当</span>' +
+        "<span>状態</span><span></span></div>";
+      shownCases.forEach(function (c) {
+        var st = stat(c);
+        h += '<div class="task' + (st === "done" ? " is-done" : "") + '">' +
+          (c.place ? '<div class="tag">' + esc(facName(c.place)) + "</div>" : "") +
+          '<input class="t-in t-name" data-pk="cases|' + esc(c.id) + '|title"' +
+            ' data-list="cases" data-id="' + esc(c.id) +
+            '" data-field="title" value="' + esc(c.title) + '" title="' + esc(c.title) +
+            '" placeholder="内容" aria-label="内容">' +
+          '<input class="t-in t-who" data-pk="cases|' + esc(c.id) + '|assignee"' +
+            ' data-list="cases" data-id="' + esc(c.id) +
+            '" data-field="assignee" value="' + esc(c.assignee || "") +
+            '" title="' + esc(c.assignee || "") +
+            '" placeholder="担当" aria-label="担当">' +
+          '<select class="t-st" data-status data-id="' + esc(c.id) + '" aria-label="状態">' +
+          ["todo", "doing", "done"].map(function (v) {
+            return '<option value="' + v + '"' + (st === v ? " selected" : "") + ">" +
+              STAT_LABEL[v] + "</option>";
+          }).join("") + "</select>" +
+          '<button class="t-del" data-act="del" data-list="cases" data-id="' + esc(c.id) +
+            '" title="削除" aria-label="削除">×</button></div>';
+      });
+      h += "</div>";
+    } else {
+      h += '<p class="empty">まだありません。</p>';
+    }
+    h += addHtml("cases", "追加", "内容");
+    if (done.length) h += '<p class="empty">完了 ' + done.length +
       '件<button style="background:none;border:0;color:var(--ink2);font-size:12px;margin-left:8px" data-act="clearDone">まとめて消す</button></p>';
     h += "</section>";
 
@@ -1257,13 +1396,14 @@ var FIREBASE_CONFIG = {
       it = fac(id); if (!it) return;
       it.status = NEXT[it.status] || "green"; it.updatedAt = now(); saveField("facilities");
     }
-    else if (act === "bump") { it = find("cases", id); if (!it) return; it.updatedAt = now(); saveField("cases"); }
-    else if (act === "finish") { it = find("cases", id); if (!it) return; it.done = true; it.updatedAt = now(); saveField("cases"); }
     else if (act === "talked") { it = find("staff", id); if (!it) return; it.followedAt = now(); saveField("staff"); }
     else if (act === "clearDone") {
-      var doneN = field.cases.filter(function (c) { return c.done; }).length;
-      if (!confirm("完了した案件 " + doneN + "件をまとめて消します。元に戻せません。よろしいですか？")) return;
-      field.cases = field.cases.filter(function (c) { return !c.done; });
+      /* 画面に出ている範囲（施設の絞り込み込み）だけを消す */
+      var inView = function (c) { return !ui.pick || c.place === ui.pick; };
+      var doneN = field.cases.filter(function (c) { return stat(c) === "done" && inView(c); }).length;
+      if (!doneN) return;
+      if (!confirm("完了した課題 " + doneN + "件をまとめて消します。元に戻せません。よろしいですか？")) return;
+      field.cases = field.cases.filter(function (c) { return !(stat(c) === "done" && inView(c)); });
       saveField("cases");
     }
     else if (act === "editlist") ui.editList = !ui.editList;
@@ -1271,8 +1411,8 @@ var FIREBASE_CONFIG = {
     else if (act === "addsend") {
       var av = (ui.addDraft || "").trim(); if (!av) return;
       if (list === "facilities") field.facilities.push({ id: uid(), name: av, status: "green", items: [], updatedAt: now() });
-      if (list === "cases") field.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "", next: "",
-        createdAt: now(), updatedAt: now(), done: false });
+      if (list === "cases") field.cases.unshift({ id: uid(), title: av, place: ui.addPlace || "",
+        assignee: "", status: "todo", createdAt: now(), updatedAt: now(), done: false });
       if (list === "staff") field.staff.push({ id: uid(), name: av, place: ui.addPlace || "", concern: "", followedAt: now() });
       ui.addOpen = null; ui.addDraft = ""; ui.addPlace = ""; saveField(list);
     }
@@ -1308,15 +1448,29 @@ var FIREBASE_CONFIG = {
       rtdb.ref("members/" + i.getAttribute("data-mname") + "/name").set(i.value.trim());
       return;
     }
+    if (i.hasAttribute && i.hasAttribute("data-status")) {
+      var c = find("cases", i.getAttribute("data-id"));
+      if (!c) return;
+      if (["todo", "doing", "done"].indexOf(i.value) < 0) return;
+      c.status = i.value;
+      /* done も併せて持つ。古い形しか見ない箇所と食い違わせないため。 */
+      c.done = i.value === "done";
+      c.updatedAt = now();
+      saveField("cases");
+      render();
+      return;
+    }
     if (i.hasAttribute && i.hasAttribute("data-cfg")) {
       rtdb.ref("config/" + i.getAttribute("data-cfg")).set(i.value.trim());
       return;
     }
     if (!i.hasAttribute || !i.hasAttribute("data-field")) return;
+    if (!editableField(i.getAttribute("data-field"))) return;
     var key = i.getAttribute("data-list");
     var o = find(key, i.getAttribute("data-id"));
     if (!o) return;
     o[i.getAttribute("data-field")] = i.value;
+    if (key === "cases") o.updatedAt = now();
     saveFor(key);
     if (i.getAttribute("data-field") === "name") render();
   });
@@ -1333,7 +1487,18 @@ var FIREBASE_CONFIG = {
     if (promoteWait && !composing()) { var p = promoteWait; promoteWait = null; promoteRow(p); }
   }
   document.addEventListener("input", function (e) {
-    if (isBlk(e.target)) typed(e.target);
+    if (isBlk(e.target)) { typed(e.target); return; }
+    /* 1行入力（課題の内容・担当など）も打った端から手元へ入れておく。
+       離れるまで待つと、その間に届いた他の人の更新で画面が作り直されて打った字が消える。 */
+    var t = e.target;
+    if (!t.hasAttribute || !t.hasAttribute("data-field") || !t.hasAttribute("data-list")) return;
+    if (!editableField(t.getAttribute("data-field"))) return;
+    var k = t.getAttribute("data-list"), o = find(k, t.getAttribute("data-id"));
+    if (!o) return;
+    if (t.hasAttribute("title")) t.title = t.value;
+    o[t.getAttribute("data-field")] = t.value;
+    if (k === "cases") o.updatedAt = now();
+    saveFor(k, 700);
   });
   document.addEventListener("compositionstart", function () { composeAt = Date.now(); });
   document.addEventListener("compositionupdate", function () { composeAt = Date.now(); });
@@ -1468,7 +1633,7 @@ var FIREBASE_CONFIG = {
       var v = s.val();
       if (!v) { if (!rooms[rid]) return; delete rooms[rid]; }
       else {
-        v.board = normBoard(v.board);
+        v.board = keepEditing(rooms[rid] && rooms[rid].board, normBoard(v.board));
         if (same(v, rooms[rid])) return;
         rooms[rid] = v;
       }
@@ -1505,7 +1670,9 @@ var FIREBASE_CONFIG = {
       if (isCeo()) {
         rtdb.ref("rooms").on("value", function (s) {
           var v = s.val() || {};
-          Object.keys(v).forEach(function (rid) { v[rid].board = normBoard(v[rid].board); });
+          Object.keys(v).forEach(function (rid) {
+            v[rid].board = keepEditing(rooms[rid] && rooms[rid].board, normBoard(v[rid].board));
+          });
           gotRooms = true;
           if (same(v, rooms)) { syncViewsSoon(); return; }
           rooms = v; syncViewsSoon(); render();
