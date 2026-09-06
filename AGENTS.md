@@ -529,8 +529,35 @@ npm script は無い。型チェック・build・lint・Playwright・Jest はい
 
 ### パスワード無しで各ユーザーとして本番検証する方法
 
-サービスアカウントでカスタムトークンを作り `signInWithCustomToken` で idToken に交換する。
-ページ内で試すときは `firebase.initializeApp(FIREBASE_CONFIG, "別名")` ＋
+⚠ **カスタムトークンは使えない**（2026-09-06 実測）。`iam.serviceAccounts.signJwt` が 403 で、
+このアカウントではサービスアカウントの署名ができない。鍵ファイルも持たない方針なので、
+「サービスアカウントでカスタムトークンを作る」という手は**この環境では成立しない**。
+
+実際に使える手は3つ。目的で使い分ける。
+
+**1. 共有相手・第三者 … 公開 apiKey で本物のアカウントを作る**
+`POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=<apiKey>` に
+`{email, password, returnSecureToken:true}` を投げると idToken が返る。これが
+`join.html` のやっていることそのものなので、**本物の共有相手として**ルールを試せる。
+RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bearer` は 401）。
+後始末は `POST /v1/accounts:delete` に `{idToken}` で**自分で消せる**（アプリからは消せないが、
+本人の idToken があれば消える）。検証用の部屋・共有は Admin 経由で作り、最後に必ず全部消す。
+
+**2. 社長（谷口） … 本人のブラウザに生きているセッションを borrow する**
+本番を開いた状態で `firebase.auth().currentUser.getIdToken()` を取り、
+そのページ内から `fetch` で REST を叩く。**実データではなく検証用の部屋に対して**行うこと。
+⚠ 重い処理を1回の評価にまとめるとレンダラが固まる。トークン取得と fetch は分けて、
+結果はグローバルへ置いて後から読む。
+
+**3. RTDB のルール本文を読む … firebase CLI の資格情報を使う**
+`~/.config/configstore/firebase-tools.json` の `refresh_token` を
+`oauth2.googleapis.com/token`（client_id / client_secret は firebase-tools の
+`lib/api.js` にある既定値）でアクセストークンへ交換し、
+`GET https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app/.settings/rules.json`
+を `Authorization: Bearer` で叩く。**ルール変更の前後で `honomi` ブロックを照合するのに使う**。
+⚠ トークンを表示・保存・commit しないこと。
+
+ページ内で別人として試すときは `firebase.initializeApp(FIREBASE_CONFIG, "別名")` ＋
 `Persistence.NONE` にすれば**本人のセッションを壊さずに**検証できる。
 
 ---
