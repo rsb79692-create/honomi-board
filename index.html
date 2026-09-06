@@ -198,8 +198,6 @@
   }
   .pname { flex:1; font-size:14px; }
   .pnote { font-size:11px; color:var(--ink3); }
-  .chk { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:14px; }
-  .chk input { width:18px; height:18px; }
   .field { margin-top:12px; }
   .field label { display:block; font-size:12px; font-weight:700; margin-bottom:4px; }
   .field input { width:100%; padding:9px; font-size:14px; font-family:inherit; border:1px solid var(--line);
@@ -340,7 +338,8 @@ var FIREBASE_CONFIG = {
 
   var me = null;                 /* {uid, role, name, mail} */
   var conf = { ceoName: "谷口" };
-  var members = {};              /* uid -> {name, mail, role, active} */
+  /* ⚠ 名簿（members）を丸ごと読むのはやめた。旧「利用者」管理だけが使っていた。
+     ログインの判定と自分の役割・表示名は members/{自分のuid} を単独で購読して得る。 */
   var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
   var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
   var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {}, failMsg = "";
@@ -349,13 +348,12 @@ var FIREBASE_CONFIG = {
   var making = false;            /* 共有リンクを作っている最中（二度押し止め） */
   /* 相手として入っているとき（社長でも正式メンバーでもないとき）の索引。rid -> sid */
   var guestOf = {}, guestRef = null;
-  var gotRooms = false, gotMembers = false;   /* 部屋と名簿の初回が届いたか */
 
   var ui = { tab: "board", room: "", saving: "",
              newId: {}, confirmDel: "", fresh: {}, focusAdd: false, open: {},
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
-             settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
-             invite: false, gateErr: "", msg: "", showUrl: "",
+             settings: false, newRoom: false, newRoomName: "",
+             gateErr: "", msg: "", showUrl: "",
              share: false, shareName: "", partner: {} };   /* partner: rid -> 表示中の相手 sid */
 
   /* 直接編集中の1行。DBの往復で入力中の文字が巻き戻らないように上書き表示する。 */
@@ -375,12 +373,6 @@ var FIREBASE_CONFIG = {
   var isGuest = function () { return me && me.role === "guest"; };
   /* obj[key] は constructor などの継承分でも真になる。名簿の判定は必ずこれを通す。 */
   function owns(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
-  function nameOfUid(u) {
-    if (me && u === me.uid) return me.name || "自分";
-    /* obj[key] は constructor などの継承分でも真になる。必ず owns() を通す */
-    var m = owns(members, u) ? members[u] : null;
-    return (m && m.name) || "だれか";
-  }
   function room() { return rooms[ui.room] || null; }
   function board() {
     var r = room();
@@ -1008,18 +1000,10 @@ var FIREBASE_CONFIG = {
     var h = '<div class="panel"><h3>部屋を作る</h3>' +
       '<div class="field"><label>部屋の名前</label>' +
       '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="部屋の名前"></div>';
-    var any = false;
-    Object.keys(members).forEach(function (u) {
-      if (u === me.uid) return;
-      var m = members[u] || {};
-      if (m.active === false) return;
-      any = true;
-      h += '<label class="chk"><input type="checkbox" data-pickuid="' + esc(u) + '"' +
-        (ui.newRoomPick[u] ? " checked" : "") + "><span>" + esc(m.name || m.mail || u) + "</span></label>";
-    });
-    h += '<p class="hint">' + (any ? "だれも選ばなければ、あなただけの経営ボードになります。"
-      : "あなただけの経営ボードになります。") +
-      "読むだけの人へは、あとから「共有」でリンクを渡せます。</p>";
+    /* ⚠ 人を選ばせるのはやめた（旧「利用者」管理）。
+       相手には「共有」からリンクを渡す。それが今の唯一の渡し方。 */
+    h += '<p class="hint">あなたのボードになります。' +
+      "相手へは、作ったあとに「共有」からリンクを渡せます。</p>";
     return h + '<button class="btn" data-act="makeroom">作る</button>' +
       '<button class="btn ghost" data-act="newroom" style="margin-left:8px">やめる</button></div>';
   }
@@ -1100,13 +1084,9 @@ var FIREBASE_CONFIG = {
 
     h += '<h3 style="margin-top:18px">部屋</h3>';
     myRooms().forEach(function (rid) {
-      var r = rooms[rid];
-      var who = Object.keys(r.members || {}).filter(function (u) { return u !== me.uid; })
-        .map(nameOfUid).join("、");
       var rn = roomLabel(rid);
       var sn = sharesOf(rid).length;
       var note = [];
-      if (who) note.push(who);
       if (sn) note.push("共有 " + sn + "件");
       h += '<div class="pline"><span class="pname">' + esc(rn) + "</span>" +
         '<span class="pnote">' + esc(note.join("・")) + "</span>" +
@@ -1116,32 +1096,9 @@ var FIREBASE_CONFIG = {
           'を削除" style="font-weight:700;color:var(--bad)">削除</button></div>';
     });
 
-    h += '<h3 style="margin-top:18px">利用者</h3>';
-    Object.keys(members).forEach(function (u) {
-      var m = members[u] || {};
-      if (u === me.uid) {
-        h += '<div class="pline"><span class="pname">' + esc(m.name || m.mail || u) +
-          '</span><span class="pnote">あなた</span></div>';
-        return;
-      }
-      /* 一時的に止める操作は持たない。外すときは「削除」だけ。 */
-      var mn = m.name || m.mail || "この利用者";
-      h += '<div class="pline"><input value="' + esc(m.name || "") + '" data-mname="' + esc(u) +
-        '" placeholder="表示名" aria-label="' + esc(mn) + 'の表示名">' +
-        '<span class="pnote">' + (m.active === false ? "使えません" : "使えます") + "</span>" +
-        '<button data-act="delmember" data-id="' + esc(u) + '" aria-label="' + esc(mn) +
-        'を削除" style="font-weight:700;color:var(--bad)">削除</button></div>';
-    });
-
-    if (ui.invite) {
-      h += '<div class="field"><label>名前</label><input id="invName" placeholder="谷村"></div>' +
-        '<div class="field"><label>メールアドレス</label><input id="invMail" type="email" placeholder="mail@example.com"></div>' +
-        '<div class="field"><label>最初のパスワード（6文字以上）</label><input id="invPw" type="text" placeholder="6文字以上"></div>' +
-        '<button class="btn" data-act="doinvite">登録する</button>' +
-        '<button class="btn ghost" data-act="invite" style="margin-left:8px">やめる</button>';
-    } else {
-      h += '<button class="btn ghost" data-act="invite">人を追加する</button>';
-    }
+    /* ⚠ 旧「利用者」欄は撤去した（一覧・人を追加する・メールアドレス・最初のパスワード）。
+       人にボードを見せる手段は「共有」リンクだけにする。
+       ログインの判定と自分の役割は members/{自分のuid} の購読が担っており、そちらは残す。 */
 
     return h + '<div style="margin-top:16px"><button data-act="settings" style="background:none;border:0;font-size:12px;color:var(--ink3)">設定を閉じる</button></div></div>';
   }
@@ -1543,22 +1500,18 @@ var FIREBASE_CONFIG = {
     }
     else if (act === "settings") { ui.settings = !ui.settings; if (ui.settings) ui.share = false; }
     else if (act === "share") { ui.share = !ui.share; if (ui.share) ui.settings = false; ui.showUrl = ""; }
-    else if (act === "invite") ui.invite = !ui.invite;
     else if (act === "newroom") {
-      ui.newRoom = !ui.newRoom; ui.newRoomName = ""; ui.newRoomPick = {};
+      ui.newRoom = !ui.newRoom; ui.newRoomName = "";
       /* ⚠ ここで消さないと「変える → やめる → ＋ → 作る」で、
-         下の capture 側が前に選んだボードの名前とメンバーを黙って上書きする。 */
+         下の capture 側が前に選んだボードの名前を黙って上書きする。 */
       ui.editingRoom = null;
     }
     else if (act === "makeroom") {
       var nm = (ui.newRoomName || "").trim();
       if (!nm) { ui.msg = "部屋の名前を入れてください。"; render(); return; }
+      /* 作った人だけが入る。人を選ばせる仕組みは撤去した（旧「利用者」管理）。
+         members/{uid}/rooms は、自分がどの部屋を見るかの索引として今も使う。 */
       var mem = {}; mem[me.uid] = true;
-      /* 名簿に居る人だけを入れる。消した人の選択が残っていると、
-         部屋には入るのに members 側が書けず（.validate で落ちる）、幽霊のメンバー行が残る。 */
-      Object.keys(ui.newRoomPick).forEach(function (u) {
-        if (ui.newRoomPick[u] && owns(members, u)) mem[u] = true;
-      });
       var rid = uid();
       rtdb.ref("rooms/" + rid).set({ name: nm, members: mem,
         ownerName: (me.name || conf.ceoName || "谷口").slice(0, 60),
@@ -1574,8 +1527,7 @@ var FIREBASE_CONFIG = {
     }
     else if (act === "editroom") {
       var r = rooms[id];
-      ui.newRoom = true; ui.newRoomName = r.name || ""; ui.newRoomPick = {};
-      Object.keys(r.members || {}).forEach(function (u) { ui.newRoomPick[u] = true; });
+      ui.newRoom = true; ui.newRoomName = r.name || "";
       ui.editingRoom = id;
       ui.settings = false;
     }
@@ -1603,70 +1555,6 @@ var FIREBASE_CONFIG = {
           /* 消せなかったのに画面から消えると、生きているURLを止められなくなる */
           kept.forEach(function (x) { shares[x.sid] = x.rec; });
           ui.msg = "消せませんでした（" + ((err && err.code) || "原因不明") + "）";
-          render();
-        });
-      return;
-    }
-    else if (act === "delmember") {
-      /* 利用者を消す。消すのは「その人の登録」だけ。
-         ・rooms/{全部屋}/members/{uid}  … 部屋のメンバー登録（認可の正）
-         ・members/{uid}                 … 名簿（配下の rooms も一緒に消える。表示の正）
-         ⚠ 共有リンク（shares）はボードに紐づくもので、利用者には紐づかない。
-           ここでは触らない。止めたいときは、そのボードの「共有」から止める。
-         部屋そのもの・共有ボードの中身・現場マネジメントは消さない。
-         Firebase Auth のアカウントも消さない（消せる仕組みをアプリに持たせない）。 */
-      if (!id || typeof id !== "string" || id.indexOf("/") >= 0 ||
-          !owns(members, id) || id === me.uid) return;
-      /* 部屋と名簿が揃う前に消すと、入っている部屋を取りこぼす */
-      if (!gotRooms || !gotMembers) {
-        ui.msg = "読み込み中です。少し待ってからもう一度押してください。";
-        render(); return;
-      }
-      var who = members[id] || {};
-
-      var rids = {}, dupd = {};
-      /* 部屋の側と名簿の側は二重に持っている。取りこぼさないよう両方から集める。 */
-      Object.keys(rooms).forEach(function (rid) {
-        var r = rooms[rid];
-        if (r && owns(r.members || {}, id)) rids[rid] = 1;
-      });
-      Object.keys(who.rooms || {}).forEach(function (rid) { rids[rid] = 1; });
-
-      /* ⚠ 共有リンクはボードに紐づくので、利用者を消しても失効しない。
-         旧「利用者ごとの閲覧リンク」は消せば失効したため、同じつもりで押されると
-         止めたはずのURLが生き残る。その人がいたボードの件数を出して、止め方まで書く。 */
-      var liveShares = Object.keys(shares).filter(function (sid) {
-        return shares[sid] && rids[shares[sid].rid];
-      }).length;
-      if (!confirm("この利用者を削除しますか？\n\n" + (who.name || who.mail || "") +
-                   "\n\n全部の部屋から外れ、ログインできなくなります。\n" +
-                   "共有ボードに書かれた内容は残ります。\n\n" +
-                   "⚠ この人がいたボードの共有リンクは、これでは止まりません" +
-                   (liveShares ? "（今 " + liveShares + "件）" : "") + "。\n" +
-                   "止めるときは、そのボードの「共有」から「共有をやめる」を押してください。\n\n" +
-                   "元に戻すには「人を追加する」で、同じメールアドレスと" +
-                   "そのパスワードを入れ直す必要があります。")) return;
-
-      Object.keys(rids).forEach(function (rid) {
-        if (rid && rid.indexOf("/") < 0) dupd["rooms/" + rid + "/members/" + id] = null;
-      });
-      dupd["members/" + id] = null;
-
-      rtdb.ref().update(dupd)
-        .then(function () {
-          /* 画面に残った選択も落とす。残すと、次に部屋を作るときへ紛れ込む */
-          delete ui.newRoomPick[id];
-          /* ログイン用のアカウントはアプリからは消せない。消し忘れると、その人は
-             timecard 側のデータへ入れるままになるので、後始末の手がかりを必ず残す。 */
-          ui.msg = (who.name || who.mail || "利用者") + " を削除しました。" +
-            (liveShares ? "この人がいたボードの共有リンク " + liveShares +
-              "件は止まっていません。止めるときは、そのボードの「共有」から。" : "") +
-            "ログイン用のアカウントは残っています。完全に止めるには、Firebase コンソールで " +
-            (who.mail || "そのメールアドレス") + " のアカウントを無効化してください。";
-          render();
-        })
-        .catch(function (err) {
-          ui.msg = "削除できませんでした（" + ((err && err.code) || "原因不明") + "）";
           render();
         });
       return;
@@ -1817,38 +1705,6 @@ var FIREBASE_CONFIG = {
       if (!okId(id)) return;
       ui.partner[ui.room] = id;
     }
-    else if (act === "doinvite") {
-      var n = document.querySelector("#invName"), em = document.querySelector("#invMail"), pw = document.querySelector("#invPw");
-      var nv = (n ? n.value : "").trim(), ev = (em ? em.value : "").trim(), pv = pw ? pw.value : "";
-      if (!nv || !ev || pv.length < 6) { ui.msg = "名前・メール・6文字以上のパスワードを入れてください。"; render(); return; }
-      var second = firebase.apps.filter(function (a) { return a.name === "invite"; })[0] ||
-        firebase.initializeApp(FIREBASE_CONFIG, "invite");
-      second.auth().createUserWithEmailAndPassword(ev, pv)
-        .catch(function (err) {
-          /* 一度削除した人を戻すときは、ログイン用のアカウントが残っているのでここへ来る。
-             そのアカウントのパスワードが分かれば、UID を取り直して名簿へ入れ直せる。
-             （UID を変えないので、部屋・閲覧リンクの紐付けも元どおりに作れる） */
-          if (err && err.code === "auth/email-already-in-use") {
-            return second.auth().signInWithEmailAndPassword(ev, pv);
-          }
-          throw err;
-        })
-        .then(function (cred) {
-          var u = cred.user.uid;
-          return second.auth().signOut().then(function () {
-            return rtdb.ref("members/" + u).set({ name: nv, mail: ev, role: "mgr", active: true });
-          });
-        })
-        .then(function () { ui.invite = false; ui.msg = nv + " を登録しました。部屋に入れてください。"; render(); })
-        .catch(function (err) {
-          ui.msg = /invalid-credential|wrong-password|user-not-found|invalid-login/.test(err.code)
-            ? "そのメールアドレスは登録済みです。前に使っていたパスワードを入れると、同じ人として戻せます。" +
-              "分からないときは、本人にログイン画面の「パスワードを忘れた」から再設定してもらってください。"
-            : "登録できませんでした（" + err.code + "）";
-          render();
-        });
-      return;
-    }
     else if (act === "askdel") {
       var pk = pkOf(list, id);
       ui.confirmDel = ui.confirmDel === pk ? "" : pk;
@@ -1910,34 +1766,45 @@ var FIREBASE_CONFIG = {
     if (!b || !ui.editingRoom) return;
     var rid = ui.editingRoom; ui.editingRoom = null;
     if (!okId(rid) || !rooms[rid]) return;      /* 開いている間に消えていたら何もしない */
-    var mem = {}; mem[me.uid] = true;
-    Object.keys(ui.newRoomPick).forEach(function (u) {
-      if (ui.newRoomPick[u] && owns(members, u)) mem[u] = true;
-    });
-    var old = Object.keys((rooms[rid] || {}).members || {});
+    /* ⚠ 直すのは名前だけ。members は既にある登録をそのまま残す。
+       人を選ばせる仕組みは撤去したので、ここで members を書き直すと
+       手元に無い登録を黙って消すことになる。 */
+    /* ⚠ 名前を付けていないボードは name を持たない（「経営ボード」と出す）。
+       空欄のまま保存すると値が undefined になり、update() が**送信前に同期 throw** して
+       alert も出ないまま黙って落ちる。必ず文字列に確定させ、throw も拾う。 */
+    var nn = (ui.newRoomName || "").trim() || String(rooms[rid].name || "");
     var upd = {};
-    upd["rooms/" + rid + "/name"] = (ui.newRoomName || "").trim() || rooms[rid].name;
-    upd["rooms/" + rid + "/members"] = mem;
-    old.forEach(function (u) { if (!mem[u]) upd["members/" + u + "/rooms/" + rid] = null; });
-    Object.keys(mem).forEach(function (u) { upd["members/" + u + "/rooms/" + rid] = true; });
-    rtdb.ref().update(upd).catch(function (err) { alert("変更できませんでした（" + err.code + "）"); });
+    upd["rooms/" + rid + "/name"] = nn;
+    var sending;
+    try { sending = rtdb.ref().update(upd); }
+    catch (e2) { sending = Promise.reject(e2); }
+    sending.catch(function (err) {
+      alert("変更できませんでした（" + ((err && (err.code || err.message)) || "原因不明") + "）");
+    });
   }, true);
 
   document.addEventListener("change", function (e) {
     var i = e.target;
     if (i.id === "pickSel") { captureDrafts(); ui.pick = i.value; render(); return; }
     if (i.id === "addPlace") { ui.addPlace = i.value; return; }
-    if (i.hasAttribute && i.hasAttribute("data-pickuid")) {
-      captureDrafts();
-      ui.newRoomPick[i.getAttribute("data-pickuid")] = i.checked;
-      return;
-    }
     if (i.hasAttribute && i.hasAttribute("data-mname")) {
       var mu = i.getAttribute("data-mname"), mv = i.value.trim().slice(0, 60);
-      rtdb.ref("members/" + mu + "/name").set(mv);
+      /* ⚠ 直せるのは自分の表示名だけ。他人の名前を直す欄は撤去した（旧「利用者」管理）。
+         画面の要素を細工されても、ほかの人の名簿には書かない。 */
+      if (!me || mu !== me.uid) return;
+      /* ⚠ 空欄では保存しない。空で書くと config/ceoName と各ボードの ownerName の
+         写しだけが旧名のまま残り、ヘッダーはログイン用アドレスへ落ちて画面に出てしまう。 */
+      if (!mv) { i.value = me.name || ""; return; }
+      rtdb.ref("members/" + mu + "/name").set(mv).catch(function (err) {
+        /* 黙って成功に見せない。失敗を伝えないと、直したつもりのまま
+           相手側の見出し（ownerName）だけが古いまま残る。 */
+        ui.msg = "表示名を保存できませんでした（" +
+          ((err && (err.code || err.message)) || "原因不明") + "）。開き直してください。";
+        render();
+      });
       /* 自分（社長）の表示名は、相手にも見える左列の見出しになる。
          相手は config も members も読めないので、各ボードへ写しておく。 */
-      if (isCeo() && mu === me.uid && mv) {
+      if (isCeo() && mv) {
         rtdb.ref("config/ceoName").set(mv);
         var nu = {};
         myRooms().forEach(function (rid) { nu["rooms/" + rid + "/ownerName"] = mv; });
@@ -1955,10 +1822,6 @@ var FIREBASE_CONFIG = {
       c.updatedAt = now();
       saveField("cases");
       render();
-      return;
-    }
-    if (i.hasAttribute && i.hasAttribute("data-cfg")) {
-      rtdb.ref("config/" + i.getAttribute("data-cfg")).set(i.value.trim());
       return;
     }
     if (!i.hasAttribute || !i.hasAttribute("data-field")) return;
@@ -2193,8 +2056,8 @@ var FIREBASE_CONFIG = {
   auth.onAuthStateChanged(function (u) {
     ui.saving = ""; failed = {}; failMsg = "";
     if (!u) {
-      me = null; members = {};
-      gotRooms = false; gotMembers = false; ui.open = {};
+      me = null;
+      ui.open = {};
       ui.share = false; ui.showUrl = ""; ui.shareName = ""; ui.partner = {};
       dropShareSub(); dropGuestSub(); unwatchAll(); render(); return;
     }
@@ -2218,7 +2081,6 @@ var FIREBASE_CONFIG = {
           Object.keys(v).forEach(function (rid) {
             v[rid].board = keepEditing(rooms[rid] && rooms[rid].board, normBoard(v[rid].board));
           });
-          gotRooms = true;
           if (same(v, rooms)) return;
           rooms = v; render();
         }, function (e) {
@@ -2226,13 +2088,10 @@ var FIREBASE_CONFIG = {
             "）。開き直してください。";
           render();
         });
-        rtdb.ref("members").on("value", function (s) {
-          members = s.val() || {}; gotMembers = true; render();
-        }, function (e) {
-          ui.msg = "名簿を読めませんでした（" + ((e && (e.code || e.message)) || "原因不明") +
-            "）。開き直してください。";
-          render();
-        });
+        /* ⚠ 名簿（members）の全体購読は撤去した。旧「利用者」一覧と部屋のメンバー選択
+           だけが使っていた欄で、今はどちらも無い。全部を読むと、ほかの人の
+           メールアドレスと UID まで画面へ持ってくることになる。
+           自分の役割と表示名は、上の members/{自分のuid} の購読から得ている。 */
         /* 台帳は社長だけが読み書きする。ここを members に置くと、
            ほかの利用者が人のあいことばを読めてしまう。 */
         if (!shareRef) {
@@ -2248,7 +2107,6 @@ var FIREBASE_CONFIG = {
         }
       } else {
         dropShareSub();
-        rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); }, function () {});
       }
 
       rtdb.ref("config").on("value", function (s) {
@@ -2268,7 +2126,6 @@ var FIREBASE_CONFIG = {
         社長が共有をやめれば、この索引が残っていても読み書きは拒否される。 */
   function asGuest(u) {
     dropShareSub();
-    members = {}; gotMembers = false; gotRooms = false;
     if (guestRef) return;                       /* 既に相手として購読している */
     guestRef = rtdb.ref("guestOf/" + u.uid);
     guestRef.on("value", function (s) {
