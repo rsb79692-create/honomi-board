@@ -389,10 +389,22 @@ timecard の `elevateStaffSession` / `elevateShareSession` は画面遷移を待
 **裏で走らせている**。待たずに読むと匿名トークンのまま 401 になる。
 timecard 側に `afterElevation()` を用意したので、それを使う。
 
+⚠ **`s`（一般スタッフ）の役割でも `/honomi` 全体を読める。**
+`.read` は `r` の値を見ていないので、PIN を持つスタッフは `config`・`documents`・
+`viewerTokens` の一覧まで読める。管理者への昇格は `/authz` 側（`pin-set.js` の失効検証）で
+止まっているので即座の権限昇格にはならないが、内部者に対しては広い。
+ノードごとに `a` / `s` を分けるのは次の作業。
+
+⚠ **`tc5_staff` の匿名読み取りには氏名だけでなく社員番号・所属・雇用区分も入っている。**
+起動時のスタッフ選択に本当に要るのは表示名と読みだけ。分けるなら別ノードへ切り出す。
+
 ⚠ **GitHub Actions は匿名サインアップをやめた。**
 `fcm-check.js`（30分ごと）と `notify-check.js`（手動）は、役割つきの領域を読むので
 **サービスアカウントの OAuth2 アクセストークン**（`Authorization: Bearer`）で入る。
 `morning-check.js` は `tc5_records` と `master/locations` しか読まないため**無変更**。
+⚠⚠ **`FIREBASE_API_KEY` の GitHub Secret は消さないこと。** morning-check だけが今も使う。
+⚠ サービスアカウントのアクセストークンは**ルールを全部迂回する**。同じ RTDB に同居している
+ボード側（`rooms` / `shares` / `members` / `field`）まで届くので、この鍵を置く場所は増やさない。
 
 ### 共有の認可（サーバーが無い作りでどう絞るか）
 
