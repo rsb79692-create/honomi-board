@@ -627,9 +627,12 @@ var FIREBASE_CONFIG = {
     var r = rooms[sh.rid];
     var out = { sid: sid, who: String(sh.name || ""), rooms: [] };
     if (!r) return out;                          /* ボードが消えていたら中身なし */
-    /* 現場も書ける欄が許可リストへ紛れ込んだら、写しを作らない（空＝写しを消す） */
+    /* 現場も書ける欄が許可リストへ紛れ込んだら、写しを作らない（空＝写しを消す）。
+       ⚠ 結果として渡してあるURLは全部読めなくなる。安全側だが、黙って起こしてはいけない。 */
     if (!viewKeysOk()) {
-      ui.saving = "共有リンクの設定が正しくないため、中身を更新していません。";
+      ui.saving = "共有リンクの設定に誤りがあります。";
+      ui.msg = "共有リンクの設定に誤りがあるため、渡してあるURLをすべて止めました。" +
+        "（載せてよいのは社長しか書けない欄だけです）";
       paintStatus();
       return out;
     }
@@ -652,9 +655,11 @@ var FIREBASE_CONFIG = {
   }
   /* 中身が変わったときだけ書く（同じ内容を何度も送らない） */
   function syncShares() {
-    /* 名簿と部屋が届く前に書くと、中身の無い写しを配って
-       「使えません」と誤って見せてしまう。揃うまで待つ。 */
-    if (!isCeo() || !gotRooms || !gotMembers) return Promise.resolve();
+    /* 部屋が届く前に書くと、中身の無い写しを配って「使えません」と誤って見せてしまう。
+       ⚠ 名簿（gotMembers）は待たない。sharePayload は members を見ないので要らないし、
+       待たせると名簿の購読が黙って落ちたときに写しが未来永劫更新されなくなる。
+       名簿が要るのは migrateLinks の active 判定だけで、そちらには別途ガードがある。 */
+    if (!isCeo() || !gotRooms) return Promise.resolve();
     var live = {}, jobs = [];
     Object.keys(shares).forEach(function (sid) {
       var sh = shares[sid], tk = sh && sh.token;
@@ -1166,7 +1171,9 @@ var FIREBASE_CONFIG = {
     var h = '<div class="panel"><h3>' + esc(roomLabel(rid)) + " を共有する</h3>" +
       '<p class="hint">リンクを渡した人は、ログインなしで<b>ビジョン</b>と<b>アウトプット</b>を' +
       "<b>読むだけ</b>できます。書き足し・書き換え・削除はできません。" +
-      "タスク・やりとり・現場マネジメント・利用者の名前は見えません。</p>";
+      "タスク・やりとり・現場マネジメントと、書いた人の名前・日時は見えません。<br>" +
+      "相手に見えるのは<b>「" + esc(roomLabel(rid)) + "」というボードの名前</b>と、" +
+      "下に入れる宛先の名前です。人名を出したくないときはボードの名前を変えてください。</p>";
 
     var list = sharesOf(rid);
     if (list.length) {
@@ -1706,18 +1713,6 @@ var FIREBASE_CONFIG = {
         render(); return;
       }
       var who = members[id] || {};
-      /* ⚠ 共有リンクはボードに紐づくので、利用者を消しても失効しない。
-         旧「利用者ごとの閲覧リンク」は消せば失効したため、同じつもりで押されると
-         止めたはずのURLが生き残る。件数を出して、止め方まで書く。 */
-      var liveShares = Object.keys(shares).length;
-      if (!confirm("この利用者を削除しますか？\n\n" + (who.name || who.mail || "") +
-                   "\n\n全部の部屋から外れ、ログインできなくなります。\n" +
-                   "共有ボードに書かれた内容は残ります。\n\n" +
-                   "⚠ 渡してある共有リンクは、これでは止まりません" +
-                   (liveShares ? "（今 " + liveShares + "件）" : "") + "。\n" +
-                   "止めるときは、そのボードの「共有」から「共有をやめる」を押してください。\n\n" +
-                   "元に戻すには「人を追加する」で、同じメールアドレスと" +
-                   "そのパスワードを入れ直す必要があります。")) return;
 
       var rids = {}, dupd = {};
       /* 部屋の側と名簿の側は二重に持っている。取りこぼさないよう両方から集める。 */
@@ -1726,6 +1721,22 @@ var FIREBASE_CONFIG = {
         if (r && owns(r.members || {}, id)) rids[rid] = 1;
       });
       Object.keys(who.rooms || {}).forEach(function (rid) { rids[rid] = 1; });
+
+      /* ⚠ 共有リンクはボードに紐づくので、利用者を消しても失効しない。
+         旧「利用者ごとの閲覧リンク」は消せば失効したため、同じつもりで押されると
+         止めたはずのURLが生き残る。その人がいたボードの件数を出して、止め方まで書く。 */
+      var liveShares = Object.keys(shares).filter(function (sid) {
+        return shares[sid] && rids[shares[sid].rid];
+      }).length;
+      if (!confirm("この利用者を削除しますか？\n\n" + (who.name || who.mail || "") +
+                   "\n\n全部の部屋から外れ、ログインできなくなります。\n" +
+                   "共有ボードに書かれた内容は残ります。\n\n" +
+                   "⚠ この人がいたボードの共有リンクは、これでは止まりません" +
+                   (liveShares ? "（今 " + liveShares + "件）" : "") + "。\n" +
+                   "止めるときは、そのボードの「共有」から「共有をやめる」を押してください。\n\n" +
+                   "元に戻すには「人を追加する」で、同じメールアドレスと" +
+                   "そのパスワードを入れ直す必要があります。")) return;
+
       Object.keys(rids).forEach(function (rid) {
         if (rid && rid.indexOf("/") < 0) dupd["rooms/" + rid + "/members/" + id] = null;
       });
@@ -1738,8 +1749,8 @@ var FIREBASE_CONFIG = {
           /* ログイン用のアカウントはアプリからは消せない。消し忘れると、その人は
              timecard 側のデータへ入れるままになるので、後始末の手がかりを必ず残す。 */
           ui.msg = (who.name || who.mail || "利用者") + " を削除しました。" +
-            (liveShares ? "渡してある共有リンク " + liveShares +
-              "件は止まっていません。止めるときは各ボードの「共有」から。" : "") +
+            (liveShares ? "この人がいたボードの共有リンク " + liveShares +
+              "件は止まっていません。止めるときは、そのボードの「共有」から。" : "") +
             "ログイン用のアカウントは残っています。完全に止めるには、Firebase コンソールで " +
             (who.mail || "そのメールアドレス") + " のアカウントを無効化してください。";
           syncSharesSoon(); render();
@@ -1753,8 +1764,9 @@ var FIREBASE_CONFIG = {
     /* 共有リンクを作る。相手の利用者登録も、ボードのメンバー追加もしない。
        作ったらそのままクリップボードへ入れる（「作る」と「コピー」で2回押させない）。 */
     else if (act === "snew" || act === "sredo") {
-      /* 二度押しで、誰にも渡していないリンクがもう1本できるのを止める */
-      if (making) return;
+      /* 二度押しで、誰にも渡していないリンクがもう1本できるのを止める。
+         圏外だと update が解決も棄却もしないので、黙って無反応にはしない。 */
+      if (making) { ui.msg = "共有リンクを作っています。少し待ってください。"; render(); return; }
       var srid = ui.room, oldSid = "";
       if (act === "sredo") {
         if (!okId(id) || !owns(shares, id)) return;
@@ -1789,6 +1801,9 @@ var FIREBASE_CONFIG = {
          DB の返事を待ってから書くと必ず失敗するので、ここで先に頼んでおく。 */
       making = true;
       var copying = clipWrite(viewUrl(stk));
+      /* DB 側が失敗したときは copying に受け手が付かない。
+         握っておかないと未処理の rejection が console に出る（QA の「エラー0件」を汚す）。 */
+      copying.catch(function () {});
       rtdb.ref().update(su)
         .then(function () {
           making = false;
@@ -2198,6 +2213,11 @@ var FIREBASE_CONFIG = {
         rtdb.ref("members").on("value", function (s) {
           members = s.val() || {}; gotMembers = true;
           migrateLinks(); syncSharesSoon(); render();
+        }, function (e) {
+          /* 黙って落ちると gotMembers が立たず、旧リンクの移行が止まったままになる */
+          ui.msg = "名簿を読めませんでした（" + ((e && (e.code || e.message)) || "原因不明") +
+            "）。開き直してください。";
+          render();
         });
         /* 台帳は社長だけが読み書きする。ここを members に置くと、
            ほかの利用者が人のあいことばを読めてしまう。 */
