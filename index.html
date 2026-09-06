@@ -352,7 +352,7 @@ var FIREBASE_CONFIG = {
   var ui = { tab: "board", room: "", saving: "",
              newId: {}, confirmDel: "", fresh: {}, focusAdd: false, open: {},
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
-             settings: false, newRoom: false, newRoomName: "",
+             settings: false, newRoom: false, newRoomName: "", editingRoom: null,
              gateErr: "", msg: "", showUrl: "",
              share: false, shareName: "", partner: {} };   /* partner: rid -> 表示中の相手 sid */
 
@@ -1097,7 +1097,7 @@ var FIREBASE_CONFIG = {
       '<div class="field"><label>あなたの表示名</label>' +
       '<input data-mname="' + esc(me.uid) + '" value="' + esc(me.name || "") + '" placeholder="谷口"></div>';
 
-    h += '<h3 style="margin-top:18px">部屋</h3>';
+    h += '<h3 style="margin-top:18px">ボード</h3>';
     myRooms().forEach(function (rid) {
       var rn = roomLabel(rid);
       var sn = sharesOf(rid).length;
@@ -1534,7 +1534,7 @@ var FIREBASE_CONFIG = {
         ui.editingRoom = null;
         /* 開いている間に消えていたら、黙って終わらない。ここで作りに回してもいけない。 */
         if (!okId(erid) || !rooms[erid]) {
-          ui.newRoom = false; ui.newRoomName = "";
+          ui.newRoom = false; ui.newRoomName = ""; syncRoomNameBox();
           ui.msg = "このボードは無くなっています。";
           render(); return;
         }
@@ -1552,7 +1552,8 @@ var FIREBASE_CONFIG = {
         /* ⚠ sharesOf() が返すのは sid の配列（オブジェクトではない）。 */
         sharesOf(erid).forEach(function (sid) {
           var tk = shares[sid] && shares[sid].token;
-          if (tk) eupd["shareKeys/" + tk + "/board"] = String(nn).slice(0, 60);
+          /* ⚠ あいことばをパスへ連結する前に必ず形を確かめる（dropShare / delroom と同じ）。 */
+          if (okToken(tk)) eupd["shareKeys/" + tk + "/board"] = String(nn).slice(0, 60);
         });
         var esending;
         try { esending = rtdb.ref().update(eupd); }
@@ -1562,7 +1563,7 @@ var FIREBASE_CONFIG = {
             ((err && (err.code || err.message)) || "原因不明") + "）。開き直してください。";
           render();
         });
-        ui.newRoom = false; ui.newRoomName = "";
+        ui.newRoom = false; ui.newRoomName = ""; syncRoomNameBox();
         render();
         return;
       }
