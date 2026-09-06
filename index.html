@@ -505,7 +505,8 @@ var FIREBASE_CONFIG = {
   /* いま打っている最中の行を、届いたばかりの中身へ持ち越す。
      以前は社長しか書かなかったので起きなかったが、双方が同じ部屋へ書くようになったため、
      相手の更新が先に届くと「まだ保存が届いていない自分の行」が画面から消えてしまう。 */
-  /* 打っている最中の行が、届いたスナップショットに無ければ入れ直す（入力を消さない）。 */
+  /* 打っている最中の行を、届いたスナップショットへ持ち越す。
+     行が消えていれば入れ直し、残っていても**本文を打っている文字で上書きする**。 */
   function keepEditing(prev, next) {
     if (!edit || !edit.live || !prev || !next) return next;
     var p = edit.pk.split("|"), c = parseKey(p[0]), id = p.slice(1).join("|");
@@ -515,18 +516,33 @@ var FIREBASE_CONFIG = {
       if (c.side === "owner") return (b.owner || {})[c.k] || null;
       return ((b.guest || {})[c.sid] || {})[c.k] || null;
     };
-    var nw = toArr(pick(next));
-    if (nw.filter(function (x) { return x && x.id === id; }).length) return next;
-    var was = toArr(pick(prev)), at = -1, mine = null;
+    /* 差し替えたリストを next へ戻す。toArr がオブジェクトから作り直すことがあるので、
+       手元で書き換えるだけでは next に反映されない。 */
+    var put = function (list) {
+      if (c.side === "owner") { if (!next.owner) next.owner = {}; next.owner[c.k] = list; }
+      else {
+        if (!next.guest) next.guest = {};
+        if (!next.guest[c.sid]) next.guest[c.sid] = {};
+        next.guest[c.sid][c.k] = list;
+      }
+    };
+    var typing = typeof edit.val === "string" ? edit.val : null;
+    var nw = toArr(pick(next)), mine = null;
+    nw.forEach(function (x) { if (x && x.id === id) mine = x; });
+    if (mine) {
+      /* ⚠ 行はあるが、本文は「自分の保存がまだ届く前」の古い値である。
+         ここを素通りさせると、700ms の保存待ちの間に相手の更新が届いただけで
+         手元の打鍵が巻き戻り、保留中の保存が**古い本文を書き戻す**（無音のデータ消失）。
+         左右を同時に書くようになったので、この取りこぼしは普通に起きる。 */
+      if (typing !== null && mine.text !== typing) { mine.text = typing; put(nw); }
+      return next;
+    }
+    var was = toArr(pick(prev)), at = -1;
     was.forEach(function (x, i) { if (x && x.id === id) { mine = x; at = i; } });
     if (!mine) return next;
+    if (typing !== null) mine.text = typing;
     nw.splice(at < 0 || at > nw.length ? nw.length : at, 0, mine);
-    if (c.side === "owner") { if (!next.owner) next.owner = {}; next.owner[c.k] = nw; }
-    else {
-      if (!next.guest) next.guest = {};
-      if (!next.guest[c.sid]) next.guest[c.sid] = {};
-      next.guest[c.sid][c.k] = nw;
-    }
+    put(nw);
     return next;
   }
   /* ⚠ 旧キー（ceoMind / toManager / toCeo / mgrAsk）はここで落とす。
@@ -1692,7 +1708,7 @@ var FIREBASE_CONFIG = {
       var su = {};
       if (okToken(oldTk)) su["shareKeys/" + oldTk] = null;
       su["shares/" + nsid] = rec;
-      su["shareKeys/" + stk] = {
+      var nkey = {
         sid: nsid, acct: sacct, rid: srid, name: snm,
         /* ルールの上限は60字。切らずに渡すと update ごと落ちる。 */
         board: String(roomLabel(srid)).slice(0, 60),
@@ -1701,8 +1717,14 @@ var FIREBASE_CONFIG = {
       /* ⚠ 作り直しで相手が既に結び付いているなら、claimBy も引き継ぐ。
          引き継がないと join.html が「はじめて」の画面を出し、相手が新しい
          あいことばを決めようとして email-already-in-use で弾かれ、
-         正しいあいことばを知っているのに入れなくなる。 */
-      if (rec.uid) su["shareKeys/" + stk + "/claimBy"] = rec.uid;
+         正しいあいことばを知っているのに入れなくなる。
+         ⚠⚠ ここは必ず**同じオブジェクトの中**へ入れる。
+         "shareKeys/{tk}" と "shareKeys/{tk}/claimBy" を同じ update へ並べると、
+         祖先と子孫が混ざるため SDK が**送信前に同期 throw** する。
+         そうなると旧 shareKeys を落とす行も送られず、
+         **渡し済みの旧URLが生きたまま**「作り直した」ように見える。 */
+      if (rec.uid) nkey.claimBy = rec.uid;
+      su["shareKeys/" + stk] = nkey;
       su["rooms/" + srid + "/partners/" + nsid] = { name: snm };
       var prev = shares[nsid];
       shares[nsid] = rec;                       /* 手元も先に入れ替える */
@@ -1713,7 +1735,13 @@ var FIREBASE_CONFIG = {
       making = true;
       var copying = clipWrite(joinUrl(stk));
       copying.catch(function () {});            /* 失敗しても未処理の rejection にしない */
-      rtdb.ref().update(su)
+      /* ⚠ update() は送信前に引数を検べ、形が悪いと **同期 throw** する。
+         throw は .catch() に入らないので、ここで拾わないと
+         making が true のまま固着し、以後どの共有操作も無視される。 */
+      var sending;
+      try { sending = rtdb.ref().update(su); }
+      catch (e) { sending = Promise.reject(e); }
+      sending
         .then(function () {
           making = false;
           ui.partner[srid] = nsid;
@@ -1730,9 +1758,12 @@ var FIREBASE_CONFIG = {
         .catch(function (err) {
           making = false;
           if (prev) shares[nsid] = prev; else delete shares[nsid];
-          /* 先にコピーしてしまったURLは使えない。取り違えないよう必ず言う。 */
-          ui.msg = "作れませんでした（" + ((err && err.code) || "原因不明") +
-            "）。コピーされたURLは使えません。";
+          /* 先にコピーしてしまったURLは使えない。取り違えないよう必ず言う。
+             ⚠ 作り直しが失敗したときは、旧URLを落とす行も届いていない。
+                「止まった」と誤解させないよう、生きていることを明記する。 */
+          ui.msg = "作れませんでした（" + ((err && err.code) || (err && err.message) || "原因不明") +
+            "）。コピーされたURLは使えません。" +
+            (act === "sredo" ? "前に渡したURLは、まだ使えるままです。" : "");
           render();
         });
       return;

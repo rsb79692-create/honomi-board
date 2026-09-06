@@ -112,8 +112,8 @@
     "guestOf": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid",
         "$rid": {
+          ".write": "auth != null && auth.uid === $uid && newData.exists() && (!data.exists() || data.val() === newData.val())",
           ".validate": "newData.isString() && root.child('shares').child(newData.val()).child('uid').val() === auth.uid && root.child('shares').child(newData.val()).child('rid').val() === $rid"
         }
       }
