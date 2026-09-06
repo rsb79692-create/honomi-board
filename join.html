@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>穂乃味ボード</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --paper:#E7E9E2; --surface:#FCFCFA; --ink:#1D2226; --ink2:#5E666C; --ink3:#8D9499;
+    --line:#D3D6CB; --ceo:#2E4A6B; --bad:#B8443A;
+  }
+  html, body { margin:0; padding:0; background:var(--paper); }
+  body { font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic","Meiryo",sans-serif;
+    color:var(--ink); -webkit-font-smoothing:antialiased; }
+  #v { max-width:400px; margin:0 auto; padding:56px 20px 40px; }
+  h1 { font-size:17px; font-weight:700; letter-spacing:.04em; margin:0 0 6px; }
+  .lead { font-size:13px; color:var(--ink2); line-height:1.8; margin:0 0 22px; }
+  .lead b { color:var(--ink); }
+  label { display:block; font-size:12px; color:var(--ink2); margin:14px 0 5px; }
+  input { width:100%; font-family:inherit; font-size:16px; padding:11px 12px;
+    border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--ink); }
+  input:focus { outline:none; border-color:var(--ink); }
+  button { width:100%; margin-top:18px; padding:13px; border:0; border-radius:4px;
+    background:var(--ink); color:#fff; font-family:inherit; font-size:15px; font-weight:600; }
+  button[disabled] { background:var(--ink3); }
+  .note { font-size:12px; color:var(--ink3); line-height:1.8; margin:14px 0 0; }
+  .err { font-size:13px; color:var(--bad); line-height:1.7; margin:14px 0 0; }
+  .msg { margin:60px auto; }
+  .msg p { font-size:13px; color:var(--ink2); line-height:1.8; margin:0; }
+  .msg .warn { color:var(--bad); }
+</style>
+</head>
+<body>
+<div id="v"><div class="msg"><h1>読み込んでいます…</h1></div></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ⚠ index.html と同じ内容にすること（ビルドが無いので二重に持っている） */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDkYQ5d8mskHo94WIysaFYP8VT2bIZ9Vtc",
+  authDomain: "honomi-timecard.firebaseapp.com",
+  databaseURL: "https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "honomi-timecard",
+  appId: "1:972990519633:web:68913a33250e5be920db70"
+};
+</script>
+
+<script>
+/* 共有リンクを受け取った人が最初に開くページ。
+   RCM の /facility/invite/[token]（PIN設定）と同じ役割。
+
+   ・初回      … あいことばを2回入れる → そのまま経営ボードへ入る
+   ・2回目以降 … 端末に残っているので join を通らず index.html を開くだけ。
+                 残っていない（別の端末・消した）ときは、同じURLをもう一度開いて
+                 あいことばを入れれば入り直せる。
+                 ⚠ RCM はここが行き止まり（/facility/login に入力欄が無い）なので真似ない。
+
+   ⚠ 匿名では書けない作りにしてある。相手は Firebase Auth のアカウントを持ち、
+      あいことばは**実際に照合される**。あいことば（token）だけでは何も書けない。 */
+(function () {
+  var app = document.getElementById("v");
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function msg(title, body, warn) {
+    app.innerHTML = '<div class="msg"><h1' + (warn ? ' class="warn"' : "") + ">" + esc(title) +
+      "</h1>" + (body ? "<p>" + esc(body) + "</p>" : "") + "</div>";
+  }
+  function boardUrl() { return location.pathname.replace(/[^\/]*$/, "") + "index.html"; }
+  /* パスへ連結してよい id か。index.html の okId() と同じ形にそろえる。 */
+  function okId(x) { return typeof x === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(x); }
+  function okAcct(x) { return typeof x === "string" && /^[a-z0-9]{16,40}$/.test(x); }
+
+  /* あいことばは # のあと。# から先はサーバーにもリファラにも送られない。
+     ⚠ RCM は URL のパスに置いていてアクセスログに残る。ここは真似ない。 */
+  var token = "";
+  try { token = decodeURIComponent(String(location.hash || "").replace(/^#/, "")).trim(); } catch (e) { token = ""; }
+  var BAD = "お渡ししたURLを、途中で切れていないか確かめてから開いてください。";
+  if (!token || !/^[A-Za-z0-9_-]{22,64}$/.test(token)) {
+    msg("リンクが正しくありません", BAD);
+    return;
+  }
+
+  firebase.initializeApp(FIREBASE_CONFIG);
+  var auth = firebase.auth(), rtdb = firebase.database();
+  var info = null;
+
+  /* ⚠ ログイン状態は非同期で戻ってくる。auth.currentUser をその場で読むと、
+     入っているのに null に見えて、下の「別のアカウントで開いています」を
+     素通りしてしまう。最初の1回を待ってから判断する。 */
+  function whoNow() {
+    return new Promise(function (res) {
+      var done = false;
+      var un = auth.onAuthStateChanged(function (u) {
+        if (done) return;
+        done = true;
+        if (typeof un === "function") { try { un(); } catch (e) {} }
+        res(u || null);
+      });
+      /* 何かの理由で呼ばれなくても、開けないままにはしない */
+      setTimeout(function () { if (!done) { done = true; res(auth.currentUser || null); } }, 4000);
+    });
+  }
+
+  Promise.all([rtdb.ref("shareKeys/" + token).once("value"), whoNow()]).then(function (a) {
+    info = a[0].val();
+    var cur = a[1];
+    if (!info || !okId(info.sid) || !okAcct(info.acct) || !okId(info.rid)) {
+      msg("このリンクは使えません",
+        "リンクが新しくなったか、共有が止められています。渡してくれた人に確かめてください。", true);
+      return;
+    }
+    /* ⚠ 既に誰かでログインしている状態で「はじめて」を進めると、
+       そのアカウントが相手として登録され、社長のセッションも差し替わる。
+       発行した本人が確かめようとして踏む操作なので、必ず止めて知らせる。 */
+    if (cur && !info.claimBy) { warnSignedIn(); return; }
+    /* claimBy があれば、誰かが既にあいことばを決めている＝入り直し。 */
+    form(!!info.claimBy);
+  }, function (e) {
+    if (e && e.code === "PERMISSION_DENIED") {
+      msg("このリンクは使えません",
+        "リンクが新しくなったか、共有が止められています。渡してくれた人に確かめてください。", true);
+      return;
+    }
+    msg("いま開けませんでした",
+      "電波の届くところで、もう一度開いてみてください。", true);
+  });
+
+  /* すでに別のアカウントで開いている。そのまま進ませない。 */
+  function warnSignedIn() {
+    var h = "<h1>" + esc(info.board || "経営ボード") + "</h1>";
+    h += '<p class="lead">このブラウザは、すでに別のアカウントで開いています。<br>' +
+      "このまま進むと、<b>そのアカウントがこの共有の相手として登録されます</b>。<br>" +
+      "渡された本人がお使いのときは、いったんログアウトしてから開き直してください。</p>";
+    h += '<button id="out">ログアウトして、この共有を受け取る</button>';
+    h += '<p class="note">発行した本人が中身を確かめたいだけなら、' +
+      "このページは閉じてください。ご自分のボードはそのままです。</p>";
+    app.innerHTML = h;
+    document.getElementById("out").addEventListener("click", function () {
+      auth.signOut().then(function () { form(false); },
+        function () { msg("いま開けませんでした", "もう一度開いてみてください。", true); });
+    });
+  }
+
+  function form(again) {
+    var board = info.board || "経営ボード", owner = info.owner || "";
+    var h = "<h1>" + esc(board) + "</h1>";
+    h += '<p class="lead">' +
+      (info.name ? "<b>" + esc(info.name) + "</b> さん、ようこそ。<br>" : "") +
+      (owner ? "<b>" + esc(owner) + "</b> さんから共有されています。<br>" : "") +
+      (again
+        ? "前に決めたあいことばを入れてください。"
+        : "はじめてなので、<b>あいことば</b>を決めてください。次からはこれで入れます。") +
+      "</p>";
+    h += '<label for="pw">あいことば（8文字以上）</label>' +
+      '<input id="pw" type="password" autocomplete="' + (again ? "current-password" : "new-password") +
+      '" placeholder="8文字以上">';
+    if (!again) {
+      h += '<label for="pw2">あいことば（確認）</label>' +
+        '<input id="pw2" type="password" autocomplete="new-password" placeholder="もう一度入力">';
+    }
+    h += '<button id="go">' + (again ? "開く" : "決めて開く") + "</button>";
+    h += '<p class="note">あいことばは、このリンクを渡された人だけのものです。' +
+      "ほかの人には教えないでください。</p>";
+    h += '<p class="err" id="err" hidden></p>';
+    app.innerHTML = h;
+    var pw = document.getElementById("pw"), pw2 = document.getElementById("pw2");
+    var go = document.getElementById("go"), err = document.getElementById("err");
+    pw.focus();
+    function fail(t) { err.textContent = t; err.hidden = false; go.disabled = false; go.textContent = again ? "開く" : "決めて開く"; }
+    function submit() {
+      err.hidden = true;
+      var v = pw.value;
+      if (v.length < 8) { fail("あいことばは8文字以上にしてください。"); return; }
+      if (!again && pw2.value !== v) { fail("あいことばが一致しません。"); return; }
+      go.disabled = true; go.textContent = "開いています…";
+      enter(v, fail);
+    }
+    go.addEventListener("click", submit);
+    app.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+  }
+
+  function enter(pw, fail) {
+    var mail = info.acct + "@honomi-board.example";
+    /* まず作る。既にあれば入り直しなので、同じあいことばでサインインする。 */
+    auth.signInWithEmailAndPassword(mail, pw)
+      .catch(function (e) {
+        if (e && (e.code === "auth/user-not-found" || e.code === "auth/invalid-credential")) {
+          return auth.createUserWithEmailAndPassword(mail, pw).catch(function (e2) {
+            /* 既にある＝あいことばが違う。作れないので、そのまま知らせる。 */
+            if (e2 && e2.code === "auth/email-already-in-use") throw { code: "auth/wrong-password" };
+            throw e2;
+          });
+        }
+        throw e;
+      })
+      .then(function (cred) { return bind(cred.user.uid); })
+      .then(function () { location.replace(boardUrl()); })
+      .catch(function (e) {
+        var c = (e && e.code) || "";
+        if (c === "taken") {
+          fail("このリンクは、ほかの人が先に使っています。渡してくれた人に確かめてください。");
+        } else if (/wrong-password|invalid-credential|invalid-login/.test(c)) {
+          fail("あいことばが違います。渡してくれた人に確かめてください。");
+        } else if (c === "auth/too-many-requests") {
+          fail("何度も間違えたので、しばらく開けません。少し時間をおいてください。");
+        } else if (c === "auth/weak-password") {
+          fail("あいことばが短すぎます。8文字以上にしてください。");
+        } else if (c === "PERMISSION_DENIED") {
+          fail("このリンクは使えなくなっています。渡してくれた人に確かめてください。");
+        } else {
+          /* 知らないコードをそのまま出しても相手には意味が無い。丸めて案内する。 */
+          fail("いま開けませんでした。少し時間をおいて、もう一度開いてみてください。");
+        }
+      });
+  }
+
+  /* 自分のアカウントと共有を結び付ける。
+     ・shareKeys/{token}/claimBy … あいことばを知っている証拠。未設定のときだけ書ける
+     ・shares/{sid}/uid          … ルールが claimBy を見て、未設定のときだけ通す
+     ・guestOf/{uid}/{rid}       … どのボードの相手かの索引（本人だけが書ける）
+     ⚠ 順番を入れ替えないこと。claimBy が先に無いと shares/{sid}/uid が通らない。
+     ⚠ 既に自分の分が入っていれば、書き直さずに次へ進む（入り直しのため）。 */
+  function bind(uid) {
+    var sid = info.sid, rid = info.rid;
+    var uidRef = rtdb.ref("shares/" + sid + "/uid");
+    /* ⚠ 先に「もう自分に結び付いているか」を見る。
+       結び付いているのに claimBy を書きに行くと、作り直したリンクを第三者が
+       先に開いて claimBy を取っていた場合に、正規の相手が入れなくなる。
+       （claimBy は上書きできないので、社長が作り直すまで直らない） */
+    return uidRef.once("value").then(function (s) { return s.val(); }, function () { return null; })
+      .then(function (bound) {
+        if (bound === uid) return null;                 /* 入り直し。結び付けは済んでいる */
+        return step(rtdb.ref("shareKeys/" + token + "/claimBy"), uid)
+          .then(function () { return step(uidRef, uid); });
+      })
+      .then(function () { return step(rtdb.ref("guestOf/" + uid + "/" + rid), sid); });
+  }
+  /* 既に入っていれば何もしない。他人の値が入っていたら、その時点で止める。 */
+  function step(ref, want) {
+    return ref.once("value").then(function (s) {
+      var cur = s.val();
+      if (cur === want) return null;
+      if (cur !== null && cur !== undefined) throw { code: "taken" };
+      return ref.set(want);
+    }, function () {
+      /* 読めない＝まだ自分のものではない。書いてみて、通らなければ下で拾う。 */
+      return ref.set(want);
+    }).catch(function (e) {
+      if (e && e.code === "taken") throw { code: "taken" };
+      throw e;
+    });
+  }
+})();
+</script>
+</body>
+</html>

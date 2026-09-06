@@ -1,8 +1,8 @@
 {
   "rules": {
     "honomi": {
-      ".read": "auth != null",
-      ".write": "auth != null",
+      ".read": "auth != null && !root.child('guestOf').child(auth.uid).exists()",
+      ".write": "auth != null && !root.child('guestOf').child(auth.uid).exists()",
       "tc5_records": {
         ".indexOn": [
           "date"
@@ -20,7 +20,7 @@
           ".validate": "newData.isBoolean()"
         },
         "name": {
-          ".validate": "newData.isString()"
+          ".validate": "newData.isString() && newData.val().length <= 60"
         },
         "mail": {
           ".validate": "newData.isString()"
@@ -44,12 +44,13 @@
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true",
       ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true"
     },
+
     "shares": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
       ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
       "$sid": {
         "rid": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,128}$/)"
         },
         "name": {
           ".validate": "newData.isString() && newData.val().length <= 60"
@@ -57,73 +58,128 @@
         "token": {
           ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{22,64}$/)"
         },
-        "createdAt": {
-          ".validate": "newData.isNumber()"
+        "acct": {
+          ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9]{16,40}$/)"
         },
-        "$other": {
-          ".validate": false
-        },
-        ".validate": "newData.hasChildren(['rid','token'])"
-      }
-    },
-    "viewLinks": {
-      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
-      ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
-      "$uid": {
-        "token": {
-          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{22,64}$/)"
-        },
-        "createdAt": {
-          ".validate": "newData.isNumber()"
-        },
-        "$other": {
-          ".validate": false
-        },
-        ".validate": "newData.hasChildren(['token'])"
-      }
-    },
-    "views": {
-      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
-      "$token": {
-        ".read": "(data.child('sid').exists() && root.child('shares').child(data.child('sid').val()).child('token').val() === $token) || (data.child('uid').exists() && root.child('viewLinks').child(data.child('uid').val()).child('token').val() === $token && root.child('members').child(data.child('uid').val()).child('active').val() === true)",
-        ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
-        ".validate": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/) && newData.hasChildren(['sid','updatedAt','rooms'])",
-        "sid": {
+        "uid": {
+          ".read": "auth != null && data.val() === auth.uid",
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid && root.child('shareKeys').child(root.child('shares').child($sid).child('token').val()).child('claimBy').val() === auth.uid",
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
         },
-        "who": {
-          ".validate": "newData.isString() && newData.val().length <= 60"
-        },
-        "updatedAt": {
+        "createdAt": {
           ".validate": "newData.isNumber()"
         },
-        "rooms": {
-          ".validate": "newData.hasChildren()"
+        "$other": {
+          ".validate": false
+        },
+        ".validate": "newData.hasChildren(['rid','token','acct'])"
+      }
+    },
+
+    "shareKeys": {
+      ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      "$token": {
+        ".read": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/)",
+        ".validate": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/) && newData.hasChildren(['sid','acct','rid'])",
+        "sid": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,128}$/)"
+        },
+        "acct": {
+          ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9]{16,40}$/)"
+        },
+        "rid": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,128}$/)"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "board": {
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "owner": {
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "claimBy": {
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid && !root.child('shares').child(data.parent().child('sid').val()).child('uid').exists()",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
         },
         "$other": {
           ".validate": false
         }
       }
     },
+
+    "guestOf": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$rid": {
+          ".validate": "newData.isString() && root.child('shares').child(newData.val()).child('uid').val() === auth.uid && root.child('shares').child(newData.val()).child('rid').val() === $rid"
+        }
+      }
+    },
+
     "rooms": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('role').val() === 'ceo' && root.child('members').child(auth.uid).child('active').val() === true",
       "$rid": {
         ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || data.child('members').child(auth.uid).val() === true)",
         ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
         "name": {
-          ".validate": "newData.isString()"
+          ".read": "auth != null && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('uid').val() === auth.uid && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('rid').val() === $rid",
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "ownerName": {
+          ".read": "auth != null && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('uid').val() === auth.uid && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('rid').val() === $rid",
+          ".validate": "newData.isString() && newData.val().length <= 60"
         },
         "members": {
           "$uid": {
             ".validate": "newData.isBoolean()"
           }
         },
+        "partners": {
+          "$sid": {
+            ".read": "auth != null && root.child('shares').child($sid).child('uid').val() === auth.uid && root.child('shares').child($sid).child('rid').val() === $rid",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 60"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
         "board": {
-          "toManager": {
-            ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || root.child('rooms').child($rid).child('members').child(auth.uid).val() === true)"
+          "owner": {
+            ".read": "auth != null && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('uid').val() === auth.uid && root.child('shares').child(root.child('guestOf').child(auth.uid).child($rid).val()).child('rid').val() === $rid",
+            "$k": {
+              ".validate": "$k.matches(/^(vision|task|output|routine)$/) && newData.hasChildren()",
+              "$i": {
+                ".validate": "newData.hasChildren(['id','text'])",
+                "id": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,64}$/)" },
+                "text": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+                "by": { ".validate": "newData.isString() && newData.val().length <= 128" },
+                "createdAt": { ".validate": "newData.isNumber()" },
+                "$other": { ".validate": false }
+              }
+            }
           },
-          "mgrAsk": {
-            ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && (root.child('members').child(auth.uid).child('role').val() === 'ceo' || root.child('rooms').child($rid).child('members').child(auth.uid).val() === true)"
+          "guest": {
+            "$sid": {
+              ".read": "auth != null && root.child('shares').child($sid).child('uid').val() === auth.uid && root.child('shares').child($sid).child('rid').val() === $rid",
+              ".write": "auth != null && root.child('shares').child($sid).child('uid').val() === auth.uid && root.child('shares').child($sid).child('rid').val() === $rid",
+              ".validate": "newData.hasChildren()",
+              "$k": {
+                ".validate": "$k.matches(/^(vision|task|output|routine)$/) && newData.hasChildren()",
+                "$i": {
+                  ".validate": "newData.hasChildren(['id','text'])",
+                  "id": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,64}$/)" },
+                  "text": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+                  "by": { ".validate": "newData.isString() && newData.val().length <= 128" },
+                  "createdAt": { ".validate": "newData.isNumber()" },
+                  "$other": { ".validate": false }
+                }
+              }
+            }
           }
         }
       }
