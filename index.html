@@ -50,6 +50,9 @@
     font-size:14px; font-weight:600; color:var(--ink3); margin-bottom:-1px;
     display:flex; align-items:center; justify-content:center; gap:6px; }
   .tabs button[data-on="1"] { color:var(--ink); border-bottom-color:var(--ink); }
+  /* 共有は「今開いているボード」への操作。タブの並びに置くが、切り替えではないので幅を詰める。 */
+  .tabs button.shr { flex:0 0 auto; padding-left:14px; padding-right:14px; }
+  .tabs button.shr .badge { background:var(--ink3); }
   .badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--bad); color:#fff;
     font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
 
@@ -242,8 +245,12 @@
   .acts .del { margin-left:auto; color:var(--ink3); font-weight:400; }
   .add { width:100%; margin-top:8px; padding:9px; border:1px dashed var(--line); border-radius:4px;
     background:transparent; font-size:13px; color:var(--ink2); font-weight:600; }
-  /* 利用者ごとの閲覧リンク */
-  .vline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:0 0 9px 0; }
+  /* ボードごとの共有リンク（1行＝渡した相手1人） */
+  .vline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:9px 0;
+    border-top:1px solid var(--line); }
+  .vline:first-of-type { border-top:0; }
+  .vline .pname { flex:0 1 auto; min-width:0; font-size:14px; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .vline .pnote { flex:1 1 auto; min-width:0; font-size:12px; color:var(--ink2); }
   .vline button { border:1px solid var(--line); background:var(--surface); border-radius:3px;
     padding:6px 11px; font-size:12px; color:var(--ink2); }
@@ -290,18 +297,23 @@ var FIREBASE_CONFIG = {
   var rooms = {};                /* rid -> {name, members:{uid:true}, board:{}} */
   var field = JSON.parse(JSON.stringify(EMPTY_FIELD));
   var roomRefs = {}, saveTimers = {}, savePend = {}, failed = {}, failMsg = "";
-  /* 閲覧リンク（社長だけが扱う）
-       viewLinks/{uid} = {token, createdAt}  … だれにどのリンクを渡したかの台帳
-       views/{token}                          … その人に見せる中身の写し
-     viewSent は「最後に書いた中身」。同じものを何度も書かないための控え。 */
-  var viewLinks = {}, viewSent = {}, viewTimer = null, viewRef = null;
+  /* 共有リンク（社長だけが扱う）
+       shares/{sid}  = {rid, name, token, createdAt} … どのボードを誰へ渡したかの台帳
+       views/{token} = {sid, who, rooms:[…]}          … その相手に見せる中身の写し
+     shareSent は「最後に書いた中身」。同じものを何度も書かないための控え。
+     旧 viewLinks/{uid}（利用者ごとの閲覧リンク）は shares へ移して廃止する。
+     ただし渡し済みのURLを生かすため、token はそのまま引き継ぐ。 */
+  var shares = {}, shareSent = {}, shareTimer = null, shareRef = null;
+  var making = false;            /* 共有リンクを作っている最中（二度押し止め） */
+  var legacyLinks = {}, legacyRef = null, migrated = false;
   var gotRooms = false, gotMembers = false;   /* 部屋と名簿の初回が届いたか */
 
   var ui = { tab: "board", room: "", saving: "",
              newId: {}, confirmDel: "", fresh: {}, focusAdd: false, open: {},
              addOpen: null, addDraft: "", addPlace: "", pick: "", editList: false,
              settings: false, newRoom: false, newRoomName: "", newRoomPick: {},
-             invite: false, gateErr: "", msg: "", showUrl: "" };
+             invite: false, gateErr: "", msg: "", showUrl: "",
+             share: false, shareName: "" };
 
   /* 直接編集中の1行。DBの往復で入力中の文字が巻き戻らないように上書き表示する。 */
   var edit = null;              /* { pk, val, live } */
@@ -336,6 +348,21 @@ var FIREBASE_CONFIG = {
     return Object.keys(rooms).sort(function (a, b) {
       return (rooms[a].name || "").localeCompare(rooms[b].name || "");
     });
+  }
+  /* 経営ボード＝自分ひとりのボード（旧「社長の一人部屋」）。
+     ボードの持ち主が自分だけ、というだけの区別で、閲覧共有とは別の話。
+     共有リンクを渡しても経営ボードのままで、相手はメンバーにならない。 */
+  function isSoloRoom(rid) {
+    var r = rooms[rid];
+    if (!r || !me) return false;
+    var ms = Object.keys(r.members || {}).filter(function (u) {
+      return r.members[u] === true;
+    });
+    return ms.length <= 1 && ms.indexOf(me.uid) >= 0;
+  }
+  function roomLabel(rid) {
+    var r = rooms[rid];
+    return (r && r.name) || (isSoloRoom(rid) ? "経営ボード" : "名前なし");
   }
 
   /* この部屋にいる「自分以外」の相手の名前。
@@ -373,9 +400,25 @@ var FIREBASE_CONFIG = {
     /* 見出しの右に出す一言。助詞までここで作る（「が書く」を後ろで足すと
        「あなたも相手もが書く」のように助詞が重なる）。 */
     var ceoWho = ceo ? "あなたが書く" : (partyLabel(true) || "社長") + "が書く";
-    var mgrWho = ceo ? (partyLabel(false) || "現場") + "が書く" : "あなたが書く";
+    /* 経営ボード（自分ひとりのボード）は4枚とも自分で書く。
+       相手がいないのに「現場が書く」「あなたも相手も書く」と出すと、
+       誰にも書けない欄が2枚あるように見える。ルール上は社長が全欄へ書ける。 */
+    var solo = ceo && isSoloRoom(ui.room);
+    var mgrWho = solo ? "あなたが書く"
+      : ceo ? (partyLabel(false) || "現場") + "が書く" : "あなたが書く";
     /* 「だれが・いつ」は、書き手が1人に定まらない欄にだけ出す。
-       ビジョンは1行に畳んで一覧性を優先するので出さない。 */
+       ビジョンは1行に畳んで一覧性を優先するので出さない。
+       経営ボードは自分しか書かないので、どの欄にも出さない。 */
+    if (solo) return [
+      { key: "ceoMind",   voice: "ceo",  title: "ビジョン",     who: ceoWho, write: true,
+        fold: true, ph: "いま頭にあることを書く" },
+      { key: "toManager", voice: "mgr",  title: "タスク",       who: mgrWho, write: true,
+        ph: "やること・抱えていることを書く" },
+      { key: "toCeo",     voice: "ceo",  title: "アウトプット", who: ceoWho, write: true,
+        ph: "出したもの・決めたことを書く" },
+      { key: "mgrAsk",    voice: "both", title: "やりとり",     who: "あなたが書く", write: true,
+        ph: "相談・確認・質問・連絡を書く" }
+    ];
     return [
       { key: "ceoMind",   voice: "ceo",  title: "ビジョン",     who: ceoWho, write: ceo,
         fold: true, ph: "いま頭にあることを書く" },
@@ -490,7 +533,7 @@ var FIREBASE_CONFIG = {
       if (edit && edit.pk.split("|")[0] === p.owner) {
         if (edit.live) delete edit.failed; else edit = null;
       }
-      syncViewsSoon();                 /* 渡してあるリンクの中身も追いつかせる */
+      syncSharesSoon();                /* 渡してあるリンクの中身も追いつかせる */
     }).catch(function (e) {
       /* 失敗の表示は、その欄が保存できるようになるまで消さない */
       failed[k] = true;
@@ -510,20 +553,46 @@ var FIREBASE_CONFIG = {
   }
   function paintStatus() { var el = document.querySelector("#status"); if (el) el.textContent = ui.saving || ""; }
 
-  /* ---------- 閲覧リンク ----------
+  /* ---------- 共有リンク ----------
      このアプリはサーバーを持たない（GitHub Pages の静的配信）ので、
      「読んでよい人か」をサーバーで判定できない。
      そこで、見せてよい中身だけを views/{あいことば} へ写し、
      閲覧ページにはそこ1か所だけを読ませる。
      views は親に .read を置かないので、あいことばを知らない人は1件も取り出せない。
-     部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。 */
+     部屋・名簿・現場マネジメントは、これまでどおりログインした利用者しか読めない。
 
-  /* 閲覧リンクへ載せてよい欄（ビジョンとアウトプット＝どちらも社長が書く欄）。
-     viewPayload() の外に置いて、画面側の変更と連動させない。
+     共有の単位は「ボード1つ × 相手1人」。
+       shares/{sid} = { rid, name, token, createdAt }
+     相手はログインしないので、利用者登録も部屋のメンバー登録もしない。
+     ⚠ 共有リンクを渡しても rooms/{rid}/members は増えない（正式なメンバーとは別概念）。 */
+
+  /* 共有リンクへ載せてよい欄（ビジョンとアウトプット＝どちらも社長が書く欄）。
+     sharePayload() の外に置いて、画面側の変更と連動させない。
      ⚠ 現場が書く欄（タスク・やりとり）を足してはならない。
         写しを書くのは社長のブラウザだけなので、現場の書き足しや削除が写しへ追いつかず、
-        消したはずの内容がログイン不要の URL に残り続ける。 */
+        消したはずの内容がログイン不要の URL に残り続ける。
+        経営ボード（自分ひとりのボード）では4欄とも社長しか書けないが、
+        あとからメンバーを入れた瞬間に前提が崩れるので、欄は増やさず一律にする。 */
   var VIEW_KEYS = { ceoMind: 1, toCeo: 1 };
+  var VIEW_SECS = [
+    { key: "ceoMind", title: "ビジョン" },
+    { key: "toCeo",   title: "アウトプット" }
+  ];
+  /* ルール上、社長しか書けない欄。database.rules.json の rooms/$rid が
+     「社長のみ」で、board/toManager と board/mgrAsk にだけメンバーを足している、
+     という条文と対になっている。ここを増やすときはルールも必ず一緒に見ること。 */
+  var CEO_ONLY_KEYS = { ceoMind: 1, toCeo: 1 };
+  /* 写しは社長のブラウザしか書かない。現場も書ける欄を載せると、
+     現場の削除が写しへ追いつかず、消したはずの内容がログイン不要のURLに残る。
+     許可リストを書き換えたときに気づけるよう、実行時にも確かめる。 */
+  function viewKeysOk() {
+    for (var i = 0; i < VIEW_SECS.length; i++) {
+      var k = VIEW_SECS[i].key;
+      if (VIEW_KEYS[k] !== 1) continue;
+      if (CEO_ONLY_KEYS[k] !== 1) return false;
+    }
+    return true;
+  }
 
   function newToken() {
     var c = window.crypto || window.msCrypto;
@@ -534,28 +603,42 @@ var FIREBASE_CONFIG = {
     for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
     return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
+  function okToken(tk) { return typeof tk === "string" && /^[A-Za-z0-9_-]{22,64}$/.test(tk); }
+  /* パスへ連結してよい id か。空・スラッシュを弾くだけでなく、RTDB のキーに使えない
+     文字（. # $ [ ]）も弾く。通すと SDK が同期例外を投げて、押した操作が無言で止まる。 */
+  function okId(x) { return typeof x === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(x); }
   /* あいことばは # のあとに置く。# から先はサーバーにもリファラにも送られない。 */
   function viewUrl(tk) {
     return location.origin + location.pathname.replace(/[^\/]*$/, "") + "view.html#" + tk;
   }
+  /* そのボードぶんの共有リンク（作った順） */
+  function sharesOf(rid) {
+    return Object.keys(shares).filter(function (sid) {
+      return shares[sid] && shares[sid].rid === rid;
+    }).sort(function (a, b) {
+      return (shares[a].createdAt || 0) - (shares[b].createdAt || 0);
+    });
+  }
   /* 見せてよいものだけを組み立てる。
-     UID・メールアドレス・他の人・その人がいない部屋・画面に出していない欄は入れない。 */
-  function viewPayload(who) {
-    var m = owns(members, who) ? members[who] : {};
-    /* uid はルールが「台帳が今もこの写しを指しているか」を確かめるために使う。
-       見るのは本人なので、本人の uid が入っていて困ることはない。 */
-    var out = { uid: who, who: m.name || "", rooms: [] };
-    myRooms().forEach(function (rid) {
-      var r = rooms[rid];
-      if (!r || !owns(r.members, who) || r.members[who] !== true) return;   /* その人がいる部屋だけ */
-      var b = r.board || {};
-      /* ⚠ ここは許可リストである。画面の欄を組み立てる cards() と共通化してはならない。
-         共通化すると、ログインなしで読める views/{token} へタスク・やりとりまで流れ出る。
-         閲覧リンクに載せるのは社長が書く2枚だけ、という意図的な線引き。 */
-      var secs = [
-        { key: "ceoMind", title: "ビジョン" },
-        { key: "toCeo",   title: "アウトプット" }
-      ].filter(function (x) { return VIEW_KEYS[x.key] === 1; }).map(function (x) {
+     UID・メールアドレス・他の人・他のボード・投稿者名・投稿日時・field は入れない。
+     写しの形（rooms の配列）は旧版と同じにしてある。view.html を変えずに済ませるため。 */
+  function sharePayload(sid) {
+    var sh = shares[sid] || {};
+    var r = rooms[sh.rid];
+    var out = { sid: sid, who: String(sh.name || ""), rooms: [] };
+    if (!r) return out;                          /* ボードが消えていたら中身なし */
+    /* 現場も書ける欄が許可リストへ紛れ込んだら、写しを作らない（空＝写しを消す） */
+    if (!viewKeysOk()) {
+      ui.saving = "共有リンクの設定が正しくないため、中身を更新していません。";
+      paintStatus();
+      return out;
+    }
+    var b = r.board || {};
+    /* ⚠ ここは許可リストである。画面の欄を組み立てる cards() と共通化してはならない。
+       共通化すると、ログインなしで読める views/{token} へタスク・やりとりまで流れ出る。
+       共有リンクに載せるのは社長が書く2枚だけ、という意図的な線引き。 */
+    var secs = VIEW_SECS.filter(function (x) { return VIEW_KEYS[x.key] === 1; })
+      .map(function (x) {
         return {
           title: x.title,
           items: toArr(b[x.key])
@@ -563,63 +646,177 @@ var FIREBASE_CONFIG = {
             .filter(function (t) { return t.trim() !== ""; })
         };
       });
-      out.rooms.push({ name: r.name || "", secs: secs });
-    });
+    /* 名前を付けていない経営ボードでも、見出しが空にならないようにする */
+    out.rooms.push({ name: roomLabel(sh.rid), secs: secs });
     return out;
   }
   /* 中身が変わったときだけ書く（同じ内容を何度も送らない） */
-  function syncViews() {
+  function syncShares() {
     /* 名簿と部屋が届く前に書くと、中身の無い写しを配って
        「使えません」と誤って見せてしまう。揃うまで待つ。 */
     if (!isCeo() || !gotRooms || !gotMembers) return Promise.resolve();
     var live = {}, jobs = [];
-    Object.keys(viewLinks).forEach(function (u) {
-      var tk = viewLinks[u] && viewLinks[u].token;
-      if (!tk) return;
-      /* 止めた人・名簿から消えた人へは配らない。台帳が残っていたらその場で消す。 */
-      var m = members[u];
-      if (!m || m.active === false) { jobs.push(dropView(u, true).catch(function () {})); return; }
+    Object.keys(shares).forEach(function (sid) {
+      var sh = shares[sid], tk = sh && sh.token;
+      if (!okToken(tk) || !okId(sid)) return;
+      /* ボードごと消えたら、台帳も写しも残さない */
+      if (!sh.rid || !rooms[sh.rid]) { jobs.push(dropShare(sid, true).catch(function () {})); return; }
       live[tk] = true;
-      var j = JSON.stringify(viewPayload(u));
-      if (viewSent[tk] === j) return;
-      viewSent[tk] = j;
+      var j = JSON.stringify(sharePayload(sid));
+      if (shareSent[tk] === j) return;
       var p = JSON.parse(j);
-      /* 見せる部屋が無くなったら、名前だけの写しも残さない */
       if (!p.rooms.length) {
-        jobs.push(rtdb.ref("views/" + tk).remove().catch(viewFailed(tk)));
+        shareSent[tk] = j;
+        jobs.push(rtdb.ref("views/" + tk).remove().catch(shareFailed(tk)));
         return;
       }
+      /* 入り直した直後は控え（shareSent）が空なので、そのまま書くと中身が同じでも
+         updatedAt だけ進み、相手の画面に「更新されました」と嘘の最終更新が出る。
+         最初の1回だけ今の写しを読んで、同じなら書かずに控えを埋める。 */
+      if (!owns(shareSent, tk)) {
+        jobs.push(rtdb.ref("views/" + tk).once("value").then(function (sn) {
+          shareSent[tk] = j;
+          if (sameCopy(sn.val(), p)) return;      /* 中身が同じなら書かない */
+          p.updatedAt = now();
+          return rtdb.ref("views/" + tk).set(p);
+        }).catch(shareFailed(tk)));
+        return;
+      }
+      shareSent[tk] = j;
       p.updatedAt = now();
-      jobs.push(rtdb.ref("views/" + tk).set(p).catch(viewFailed(tk)));
+      jobs.push(rtdb.ref("views/" + tk).set(p).catch(shareFailed(tk)));
     });
     /* 使わなくなった控えは残さない */
-    Object.keys(viewSent).forEach(function (tk) { if (!live[tk]) delete viewSent[tk]; });
+    Object.keys(shareSent).forEach(function (tk) { if (!live[tk]) delete shareSent[tk]; });
     return Promise.all(jobs);
   }
-  /* 写しの更新に失敗したら黙らない。古い中身が見えたままになるため。 */
-  function viewFailed(tk) {
-    return function (e) {
-      delete viewSent[tk];
-      ui.saving = "閲覧リンクの中身を更新できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
-      paintStatus();
-    };
-  }
-  /* 予約は全員ぶんで1本しかないので、止めたら必ず取り直す。
-     取り直さないと、ほかの人の写しの更新が黙って捨てられる。 */
-  function stopViewTimer() { clearTimeout(viewTimer); viewTimer = null; }
-  function syncViewsSoon() {
-    stopViewTimer();
-    if (!isCeo() || !Object.keys(viewLinks).length) return;
-    viewTimer = setTimeout(function () { viewTimer = null; syncViews(); }, 800);
-  }
-  /* 画面を離れる前に、予約してある写しの更新を出しきる。
-     取りこぼすと「消したはずの行」が閲覧リンク側に残る。 */
-  function flushViews() {
-    stopViewTimer();
-    return syncViews();          /* 変わっていなければ何も書かない */
+  /* 今ある写しと、これから書く中身が同じか。
+     ⚠ JSON の文字列比較は使えない。RTDB は空の配列を落とし、キーの順も保証しないので、
+     中身が同じでも文字列は一致せず、毎回書き直して「最終更新」だけが進む。 */
+  function sameCopy(cur, p) {
+    if (!cur || !p) return false;
+    if (String(cur.who || "") !== String(p.who || "")) return false;
+    if (String(cur.sid || "") !== String(p.sid || "")) return false;
+    var a = toArr(cur.rooms), b = toArr(p.rooms);
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (String(a[i].name || "") !== String(b[i].name || "")) return false;
+      var x = toArr(a[i].secs), y = toArr(b[i].secs);
+      if (x.length !== y.length) return false;
+      for (var k = 0; k < x.length; k++) {
+        if (String(x[k].title || "") !== String(y[k].title || "")) return false;
+        var xi = toArr(x[k].items), yi = toArr(y[k].items);
+        if (xi.length !== yi.length) return false;
+        for (var m = 0; m < xi.length; m++) if (String(xi[m]) !== String(yi[m])) return false;
+      }
+    }
+    return true;
   }
 
-  /* H3 対策：台帳から外れた写しを片づける。
+  /* 写しの更新に失敗したら黙らない。古い中身が見えたままになるため。 */
+  function shareFailed(tk) {
+    return function (e) {
+      delete shareSent[tk];
+      ui.saving = "共有リンクの中身を更新できません（" + ((e && (e.code || e.message)) || "原因不明") + "）";
+      /* 「消したはずの行が共有URLに残る」という一番気づきにくい失敗なので、
+         小さな status だけでなく目立つ帯にも出す（保存失敗と同じ扱い）。 */
+      ui.msg = ui.saving + " 渡してあるURLには古い内容が見えています。";
+      paintStatus();
+      render();
+    };
+  }
+  /* 予約は全件ぶんで1本しかないので、止めたら必ず取り直す。
+     取り直さないと、ほかのリンクの写しの更新が黙って捨てられる。 */
+  function stopShareTimer() { clearTimeout(shareTimer); shareTimer = null; }
+  function syncSharesSoon() {
+    stopShareTimer();
+    if (!isCeo() || !Object.keys(shares).length) return;
+    shareTimer = setTimeout(function () { shareTimer = null; syncShares(); }, 800);
+  }
+  /* 画面を離れる前に、予約してある写しの更新を出しきる。
+     取りこぼすと「消したはずの行」が共有リンク側に残る。 */
+  function flushShares() {
+    stopShareTimer();
+    return syncShares();          /* 変わっていなければ何も書かない */
+  }
+
+  /* 旧「利用者ごとの閲覧リンク」（viewLinks/{uid}）を、ボードごとの共有（shares）へ移す。
+     ⚠ token はそのまま引き継ぐ。作り直すと、すでに渡してあるURLが黙って死ぬ。
+     旧版は「その人が入っている全部屋」を1つの写しへ入れていたので、
+     ボード単位へ割り直す（複数あればボードごとに1本ずつ作る）。 */
+  function migrateLinks() {
+    if (migrated || !isCeo() || !gotRooms || !gotMembers) return;
+    var us = Object.keys(legacyLinks);
+    /* 旧台帳がまだ届いていないだけかもしれない。ここで「済み」にすると、
+       あとから届いた分を取りこぼして、渡してあるURLが死ぬ。 */
+    if (!us.length) return;
+    migrated = true;
+    var upd = {}, made = [];
+    us.forEach(function (u) {
+      var l = legacyLinks[u], tk = l && l.token;
+      if (!okId(u)) return;
+      upd["viewLinks/" + u] = null;
+      if (!okToken(tk)) return;
+      /* ⚠ 旧ルールは members/{uid}/active === true を要求していたので、止めた人の
+         リンクはルール層で死んでいた。新しい shares は active を見ないため、
+         ここで移してしまうと「止めたはずのURL」が社長のログインだけで復活する。
+         台帳も写しも落として、移行しない。 */
+      var lm = owns(members, u) ? members[u] : null;
+      if (!lm || lm.active === false) { upd["views/" + tk] = null; return; }
+      var mine = myRooms().filter(function (rid) {
+        var r = rooms[rid];
+        return r && owns(r.members || {}, u) && r.members[u] === true;
+      });
+      if (!mine.length) { upd["views/" + tk] = null; return; }   /* 見せる先が無い */
+      /* ルールは name / who を60字までしか許さない。切らずに渡すと update ごと
+         .validate で落ちて、全員ぶんの移行が永久に完了しない。 */
+      var nm = String((owns(members, u) && members[u] && members[u].name) || "").slice(0, 60);
+      mine.forEach(function (rid, i) {
+        /* 1本目だけ token を引き継ぐ。2本目以降は新しく作る（元々1本しか無い運用） */
+        var t = i === 0 ? tk : newToken();
+        if (!t) return;
+        var sid = uid();
+        var rec = { rid: rid, name: nm, token: t, createdAt: (l && l.createdAt) || now() };
+        upd["shares/" + sid] = rec;
+        shares[sid] = rec;                 /* 写しを組み立てるために手元へ先に入れる */
+        made.push({ sid: sid, token: t });
+      });
+    });
+    /* 写しも同じ update で新しい形（sid つき）へ書き換える。
+       台帳だけ先に移すと、写しが古い形のまま残ってルールの読み取りが通らず、
+       渡してあるURLが「使えません」になる時間ができる。 */
+    made.forEach(function (x) {
+      var j = JSON.stringify(sharePayload(x.sid));
+      var pl = JSON.parse(j);
+      if (!pl.rooms.length) { upd["views/" + x.token] = null; return; }
+      pl.updatedAt = now();
+      upd["views/" + x.token] = pl;
+      shareSent[x.token] = j;
+    });
+    if (!Object.keys(upd).length) { migrated = false; return; }
+    rtdb.ref().update(upd).then(function () {
+      legacyLinks = {};
+      /* 旧リンク1本が複数ボードを見せていた場合、2本目以降は新しいURLになる。
+         そのままだと誰にも渡っていない「共有中」の行が残るので、必ず知らせる。 */
+      if (made.length > us.length) {
+        ui.msg = "閲覧リンクをボードごとの共有リンクへ移しました。" +
+          "1人が複数のボードを見ていた分は新しいURLになっています。" +
+          "各ボードの「共有」から、渡し直すか止めるかを決めてください。";
+      }
+      render();
+    }).catch(function (err) {
+      /* 戻せないと、DBに無い共有リンクを画面に出したままになる */
+      made.forEach(function (x) { delete shares[x.sid]; delete shareSent[x.token]; });
+      migrated = false;                    /* 次のスナップショットでやり直す */
+      /* 黙って再試行し続けると、旧リンクの中身が古いまま読めることに気づけない */
+      ui.msg = "前の閲覧リンクを共有リンクへ移せませんでした（" +
+        ((err && (err.code || err.message)) || "原因不明") +
+        "）。渡してあるURLの中身が古いままになります。";
+      render();
+    });
+  }
+
+  /* 台帳から外れた写しを片づける。
      写しは token を知らないと読めないので、放っておくと誰も消せない置き土産になる。
      社長のルールにだけ views の一覧を許してあるので、入り直したときに1回だけ掃除する。 */
   var viewSwept = false;
@@ -628,14 +825,20 @@ var FIREBASE_CONFIG = {
     viewSwept = true;
     /* 写しを先に、台帳をあとに読む。この順なら、読んでいる間に
        別のタブで作られたリンクは必ず台帳側に入るので、消しすぎない。
-       （逆にすると、作ったばかりの写しを消しかねない） */
+       （逆にすると、作ったばかりの写しを消しかねない）
+       移行が済むまでは旧台帳（viewLinks）も「生きている」側として数える。 */
     rtdb.ref("views").once("value").then(function (s) {
-      return rtdb.ref("viewLinks").once("value").then(function (ls) { return [s, ls]; });
+      return Promise.all([rtdb.ref("shares").once("value"), rtdb.ref("viewLinks").once("value")])
+        .then(function (ls) { return [s, ls[0], ls[1]]; });
     }).then(function (ss) {
-      var s = ss[0], links = ss[1].val() || {};
-      var all = s.val() || {}, keep = {}, upd = {}, n = 0;
-      Object.keys(links).forEach(function (u) {
-        var tk = links[u] && links[u].token;
+      var all = ss[0].val() || {}, sh = ss[1].val() || {}, old = ss[2].val() || {};
+      var keep = {}, upd = {}, n = 0;
+      Object.keys(sh).forEach(function (sid) {
+        var tk = sh[sid] && sh[sid].token;
+        if (tk) keep[tk] = true;
+      });
+      Object.keys(old).forEach(function (u) {
+        var tk = old[u] && old[u].token;
         if (tk) keep[tk] = true;
       });
       Object.keys(all).forEach(function (tk) {
@@ -645,32 +848,32 @@ var FIREBASE_CONFIG = {
     }).catch(function () {});
   }
   /* 台帳の購読を外す。外したことを忘れると、入り直したときに購読し直せない。 */
-  function dropViewSub() {
-    if (viewRef) { viewRef.off(); viewRef = null; }
-    viewLinks = {}; viewSent = {}; viewSwept = false;
+  function dropShareSub() {
+    if (shareRef) { shareRef.off(); shareRef = null; }
+    if (legacyRef) { legacyRef.off(); legacyRef = null; }
+    shares = {}; shareSent = {}; viewSwept = false;
+    legacyLinks = {}; migrated = false;
   }
-  /* リンクを使えなくする。写しを消せば、渡したURLはその場で無効になる。
-     auto=true は syncViews からの自動の後始末。
+  /* リンクを使えなくする。台帳と写しの両方を落とせば、渡したURLはその場で無効になる。
+     auto=true は syncShares からの自動の後始末。
      こちらから予約を入れ直すと、消せない間ずっと回り続ける。 */
-  function dropView(who, auto) {
-    /* who が空のまま連結すると viewLinks ごと消える。ここで必ず止める。 */
-    if (!who || typeof who !== "string" || who.indexOf("/") >= 0) return Promise.resolve();
-    var prev = viewLinks[who], tk = prev && prev.token, upd = {};
-    upd["viewLinks/" + who] = null;
-    if (tk) { upd["views/" + tk] = null; delete viewSent[tk]; }
+  function dropShare(sid, auto) {
+    /* sid が空のまま連結すると shares ごと消える。ここで必ず止める。 */
+    if (!okId(sid)) return Promise.resolve();
+    var prev = shares[sid], tk = prev && prev.token, upd = {};
+    upd["shares/" + sid] = null;
+    if (okToken(tk)) { upd["views/" + tk] = null; delete shareSent[tk]; }
     /* 手元の台帳も先に落とす。予約済みの書き込みが、消した写しを書き戻さないように。 */
-    delete viewLinks[who];
-    stopViewTimer();
+    delete shares[sid];
+    stopShareTimer();
     return rtdb.ref().update(upd).then(function () {
-      if (!auto) syncViewsSoon();      /* ほかの人ぶんの更新を捨てない */
+      if (!auto) syncSharesSoon();      /* ほかのリンクぶんの更新を捨てない */
     }, function (e) {
       /* 消せなかったのに画面から消えると、生きているURLを止められなくなる */
-      if (prev) viewLinks[who] = prev;
-      if (!auto) syncViewsSoon();
+      if (prev) shares[sid] = prev;
+      if (!auto) syncSharesSoon();
       render();
-      e = e || {};
-      e.__told = true;                 /* 呼び出し元が二重に知らせないための印 */
-      throw e;
+      throw e || {};
     });
   }
 
@@ -787,6 +990,7 @@ var FIREBASE_CONFIG = {
     var a = document.querySelector("#addInput"); if (a) ui.addDraft = a.value;
     var ap = document.querySelector("#addPlace"); if (ap) ui.addPlace = ap.value;
     var rn = document.querySelector("#roomName"); if (rn) ui.newRoomName = rn.value;
+    var sn = document.querySelector("#shareName"); if (sn) ui.shareName = sn.value;
   }
 
   /* 書き換えの前後で、入力中の行とカーソル位置を保つ */
@@ -868,24 +1072,35 @@ var FIREBASE_CONFIG = {
     h += '<div class="rooms">';
     ids.forEach(function (rid) {
       h += '<button data-act="room" data-id="' + esc(rid) + '" data-on="' + (ui.room === rid ? 1 : 0) + '">' +
-        esc(rooms[rid].name || "名前なし") + "</button>";
+        esc(roomLabel(rid)) + "</button>";
     });
-    if (isCeo()) h += '<button class="plus" data-act="newroom">＋</button>';
+    if (isCeo()) h += '<button class="plus" data-act="newroom" title="ボードを作る" ' +
+      'aria-label="ボードを作る">＋</button>';
     h += "</div>";
 
     h += '<div class="tabs">' +
       '<button data-act="tab" data-v="board" data-on="' + (ui.tab === "board" ? 1 : 0) + '">共有ボード</button>' +
       '<button data-act="tab" data-v="field" data-on="' + (ui.tab === "field" ? 1 : 0) + '">現場マネジメント' +
-      (alerts ? '<span class="badge">' + alerts + "</span>" : "") + "</button></div></div>";
+      (alerts ? '<span class="badge">' + alerts + "</span>" : "") + "</button>" +
+      /* 共有は「今開いているボード」に対する操作なので、ボードのタブの並びに置く。
+         経営ボード（自分ひとり）でも同じように押せる。 */
+      (isCeo() && ids.length && ui.tab === "board"
+        ? '<button class="shr" data-act="share" data-on="' + (ui.share ? 1 : 0) + '">共有' +
+          (sharesOf(ui.room).length ? '<span class="badge">' + sharesOf(ui.room).length + "</span>" : "") +
+          "</button>"
+        : "") + "</div></div>";
 
     h += '<div class="body">';
     if (ui.msg) h += '<div class="notice">' + esc(ui.msg) + "</div>";
     if (ui.newRoom && isCeo()) h += newRoomHtml();
     if (ui.settings && isCeo()) h += settingsHtml();
+    if (ui.share && isCeo() && ui.tab === "board" && rooms[ui.room]) h += shareHtml();
 
     if (ui.tab === "board") {
       h += ids.length ? boardHtml(CARDS)
-        : '<p class="empty">まだどの部屋にも入っていません。社長に入れてもらってください。</p>';
+        : isCeo()
+          ? '<p class="empty">ボードがまだありません。＋であなたの経営ボードを作れます。</p>'
+          : '<p class="empty">まだどのボードにも入っていません。社長に入れてもらってください。</p>';
     } else h += fieldHtml(stale, cold);
 
     h += "</div>";
@@ -905,15 +1120,77 @@ var FIREBASE_CONFIG = {
     var h = '<div class="panel"><h3>部屋を作る</h3>' +
       '<div class="field"><label>部屋の名前</label>' +
       '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="部屋の名前"></div>';
+    var any = false;
     Object.keys(members).forEach(function (u) {
       if (u === me.uid) return;
       var m = members[u] || {};
       if (m.active === false) return;
+      any = true;
       h += '<label class="chk"><input type="checkbox" data-pickuid="' + esc(u) + '"' +
         (ui.newRoomPick[u] ? " checked" : "") + "><span>" + esc(m.name || m.mail || u) + "</span></label>";
     });
+    h += '<p class="hint">' + (any ? "だれも選ばなければ、あなただけの経営ボードになります。"
+      : "あなただけの経営ボードになります。") +
+      "読むだけの人へは、あとから「共有」でリンクを渡せます。</p>";
     return h + '<button class="btn" data-act="makeroom">作る</button>' +
       '<button class="btn ghost" data-act="newroom" style="margin-left:8px">やめる</button></div>';
+  }
+
+  /* クリップボードへ書く。⚠ 「押した操作」の流れの中で呼ぶこと。
+     ネットワークの返事を待ってから呼ぶと、Safari では毎回拒否される。 */
+  function clipWrite(url) {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return Promise.reject();
+    try { return navigator.clipboard.writeText(url); } catch (e) { return Promise.reject(e); }
+  }
+  /* リンクをコピーする。入らなかったときだけ、選んで写せるようにURLを出す。 */
+  function copyLink(sid, okMsg) {
+    var sh = shares[sid];
+    if (!sh || !okToken(sh.token)) return;
+    clipWrite(viewUrl(sh.token)).then(function () {
+      ui.showUrl = ""; ui.msg = okMsg; render();
+    }, function () {
+      ui.showUrl = sid;
+      ui.msg = "コピーできませんでした。下に出たURLを選んで写してください。";
+      render();
+    });
+  }
+
+  /* ---------- 共有パネル ----------
+     「共有」→「共有リンクを作成」→ 自動でコピー →「リンクを送る」で終わる。
+     相手の利用者登録も、ボードのメンバー追加も要らない。
+     あいことばそのものは画面に出さない（肩越しの覗き見・スクショ対策）。
+     コピーできなかったときだけ、選んで写せるようにURLを出す。 */
+  function shareHtml() {
+    var rid = ui.room, r = rooms[rid];
+    if (!r) return "";
+    var h = '<div class="panel"><h3>' + esc(roomLabel(rid)) + " を共有する</h3>" +
+      '<p class="hint">リンクを渡した人は、ログインなしで<b>ビジョン</b>と<b>アウトプット</b>を' +
+      "<b>読むだけ</b>できます。書き足し・書き換え・削除はできません。" +
+      "タスク・やりとり・現場マネジメント・利用者の名前は見えません。</p>";
+
+    var list = sharesOf(rid);
+    if (list.length) {
+      list.forEach(function (sid) {
+        var sh = shares[sid];
+        h += '<div class="vline"><span class="pname">' + esc(sh.name || "（宛先なし）") + "</span>" +
+          '<span class="pnote">共有中</span>' +
+          '<button class="go" data-act="scopy" data-id="' + esc(sid) + '">リンクをコピー</button>' +
+          '<button data-act="sredo" data-id="' + esc(sid) + '">作り直す</button>' +
+          '<button class="stop" data-act="sstop" data-id="' + esc(sid) + '">共有をやめる</button>';
+        if (ui.showUrl === sid) {
+          h += '<input class="vurl" readonly value="' + esc(viewUrl(sh.token)) + '">';
+        }
+        h += "</div>";
+      });
+    } else {
+      h += '<p class="empty">まだ共有していません。</p>';
+    }
+
+    h += '<div class="rin"><input id="shareName" value="' + esc(ui.shareName) +
+      '" placeholder="だれに渡すか（例: 谷村さん）" aria-label="だれに渡すか">' +
+      '<button class="send plain" data-act="snew">共有リンクを作成</button></div>';
+    return h + '<div style="margin-top:16px"><button data-act="share" ' +
+      'style="background:none;border:0;font-size:12px;color:var(--ink3)">共有を閉じる</button></div></div>';
   }
 
   function settingsHtml() {
@@ -926,9 +1203,12 @@ var FIREBASE_CONFIG = {
       var r = rooms[rid];
       var who = Object.keys(r.members || {}).filter(function (u) { return u !== me.uid; })
         .map(nameOfUid).join("、");
-      var rn = r.name || "名前なし";
+      var rn = roomLabel(rid);
+      var sn = sharesOf(rid).length;
       h += '<div class="pline"><span class="pname">' + esc(rn) + "</span>" +
-        '<span class="pnote">' + esc(who || "自分だけ") + "</span>" +
+        /* 名前を付けていない経営ボードは、見出しがすでに「経営ボード」なので繰り返さない */
+        '<span class="pnote">' + esc(who || (r.name ? "経営ボード" : "")) +
+        (sn ? (who || r.name ? "・" : "") + "共有 " + sn + "件" : "") + "</span>" +
         '<button data-act="editroom" data-id="' + esc(rid) + '" aria-label="' + esc(rn) +
           'を変える">変える</button>' +
         '<button data-act="delroom" data-id="' + esc(rid) + '" aria-label="' + esc(rn) +
@@ -950,9 +1230,6 @@ var FIREBASE_CONFIG = {
         '<span class="pnote">' + (m.active === false ? "使えません" : "使えます") + "</span>" +
         '<button data-act="delmember" data-id="' + esc(u) + '" aria-label="' + esc(mn) +
         'を削除" style="font-weight:700;color:var(--bad)">削除</button></div>';
-      /* active は今の画面から作れないが、古いデータに false が残っていることは有りうる。
-         その人はルール上どのみち閲覧リンクを読めないので、行そのものを出さない。 */
-      if (m.active !== false) h += viewLineHtml(u);
     });
 
     if (ui.invite) {
@@ -966,35 +1243,6 @@ var FIREBASE_CONFIG = {
     }
 
     return h + '<div style="margin-top:16px"><button data-act="settings" style="background:none;border:0;font-size:12px;color:var(--ink3)">設定を閉じる</button></div></div>';
-  }
-
-  /* 設定画面の、その人ぶんの閲覧リンク行。
-     あいことばそのものは画面に出さない（肩越しの覗き見・スクショ対策）。
-     コピーできなかったときだけ、選んで写せるようにURLを出す。 */
-  function viewLineHtml(u) {
-    var h = '<div class="vline">';
-    if (viewLinks[u] && viewLinks[u].token && !viewPayload(u).rooms.length) {
-      /* 部屋から外れると写しを消すので、渡してあるURLは今は読めない */
-      h += '<span class="pnote" style="color:var(--bad)">' +
-        '部屋に入っていないので、今は読めません。部屋へ入れると、同じURLでまた読めます。</span>' +
-        '<button class="stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
-      return h + "</div>";
-    }
-    if (viewLinks[u] && viewLinks[u].token) {
-      h += '<span class="pnote">閲覧リンクを渡しています（ログインなしで読めます）</span>' +
-        '<button class="go" data-act="vcopy" data-id="' + esc(u) + '">リンクをコピー</button>' +
-        '<button data-act="vnew" data-id="' + esc(u) + '">作り直す</button>' +
-        '<button class="stop" data-act="vstop" data-id="' + esc(u) + '">リンクを止める</button>';
-      if (ui.showUrl === u) {
-        h += '<input class="vurl" readonly value="' + esc(viewUrl(viewLinks[u].token)) + '">';
-      }
-    } else if (!viewPayload(u).rooms.length) {
-      h += '<span class="pnote">部屋に入れると、閲覧リンクを渡せます。</span>';
-    } else {
-      h += '<span class="pnote">ログインなしで読めるリンクを渡せます。</span>' +
-        '<button data-act="vnew" data-id="' + esc(u) + '">閲覧リンクを作る</button>';
-    }
-    return h + "</div>";
   }
 
   /* 「だれが・いつ」。書き手が1人に定まらない欄の行に出す。
@@ -1364,7 +1612,7 @@ var FIREBASE_CONFIG = {
       /* flushSaves() は呼んだ時点で保留分を取り出すので、2回呼ぶと2回目が空で即決着する。
          必ず1回だけ呼び、その結果を待つこと。 */
       Promise.race([
-        Promise.all([flushSaves(), flushViews()]),
+        Promise.all([flushSaves(), flushShares()]),
         new Promise(function (r) { setTimeout(r, 1500); })
       ]).then(out, out);
       return;
@@ -1374,10 +1622,17 @@ var FIREBASE_CONFIG = {
       flushSaves();                       /* 前の部屋の保存を先に出しきる */
       failed = {}; failMsg = "";           /* 前の部屋の失敗表示は持ち越さない */
       ui.room = id; ui.confirmDel = ""; edit = null; ui.newId = {}; ui.fresh = {}; ui.open = {};
+      ui.share = false; ui.showUrl = "";      /* 別のボードの共有パネルを開いたままにしない */
     }
-    else if (act === "settings") ui.settings = !ui.settings;
+    else if (act === "settings") { ui.settings = !ui.settings; if (ui.settings) ui.share = false; }
+    else if (act === "share") { ui.share = !ui.share; if (ui.share) ui.settings = false; ui.showUrl = ""; }
     else if (act === "invite") ui.invite = !ui.invite;
-    else if (act === "newroom") { ui.newRoom = !ui.newRoom; ui.newRoomName = ""; ui.newRoomPick = {}; }
+    else if (act === "newroom") {
+      ui.newRoom = !ui.newRoom; ui.newRoomName = ""; ui.newRoomPick = {};
+      /* ⚠ ここで消さないと「変える → やめる → ＋ → 作る」で、
+         下の capture 側が前に選んだボードの名前とメンバーを黙って上書きする。 */
+      ui.editingRoom = null;
+    }
     else if (act === "makeroom") {
       var nm = (ui.newRoomName || "").trim();
       if (!nm) { ui.msg = "部屋の名前を入れてください。"; render(); return; }
@@ -1406,18 +1661,41 @@ var FIREBASE_CONFIG = {
       ui.settings = false;
     }
     else if (act === "delroom") {
+      if (!okId(id) || !rooms[id]) return;
       var rr = rooms[id];
-      if (!confirm("「" + (rr.name || "") + "」を消します。中身も消えます。よろしいですか？")) return;
+      var rsh = sharesOf(id);
+      if (!confirm("「" + roomLabel(id) + "」を消します。中身も消えます。" +
+                   (rsh.length ? "渡してある共有リンク " + rsh.length + "件も使えなくなります。" : "") +
+                   "よろしいですか？")) return;
       var upd = {}; upd["rooms/" + id] = null;
       Object.keys(rr.members || {}).forEach(function (u) { upd["members/" + u + "/rooms/" + id] = null; });
-      rtdb.ref().update(upd).catch(function (err) { alert("消せませんでした（" + err.code + "）"); });
+      /* 部屋が消えると見せる中身も無くなる。台帳と写しの両方を落とす。
+         片方だけ残すと、渡したURLが「使えません」のまま台帳に残り続ける。 */
+      var kept = [];
+      rsh.forEach(function (sid) {
+        var tk = shares[sid] && shares[sid].token;
+        kept.push({ sid: sid, rec: shares[sid] });
+        upd["shares/" + sid] = null;
+        if (okToken(tk)) { upd["views/" + tk] = null; delete shareSent[tk]; }
+        delete shares[sid];
+      });
+      stopShareTimer();
+      rtdb.ref().update(upd).then(function () { syncSharesSoon(); render(); },
+        function (err) {
+          /* 消せなかったのに画面から消えると、生きているURLを止められなくなる */
+          kept.forEach(function (x) { shares[x.sid] = x.rec; });
+          syncSharesSoon();
+          ui.msg = "消せませんでした（" + ((err && err.code) || "原因不明") + "）";
+          render();
+        });
       return;
     }
     else if (act === "delmember") {
       /* 利用者を消す。消すのは「その人の登録」だけ。
          ・rooms/{全部屋}/members/{uid}  … 部屋のメンバー登録（認可の正）
          ・members/{uid}                 … 名簿（配下の rooms も一緒に消える。表示の正）
-         ・viewLinks/{uid} と views/{token} … 渡してある閲覧リンク
+         ⚠ 共有リンク（shares）はボードに紐づくもので、利用者には紐づかない。
+           ここでは触らない。止めたいときは、そのボードの「共有」から止める。
          部屋そのもの・共有ボードの中身・現場マネジメントは消さない。
          Firebase Auth のアカウントも消さない（消せる仕組みをアプリに持たせない）。 */
       if (!id || typeof id !== "string" || id.indexOf("/") >= 0 ||
@@ -1428,9 +1706,16 @@ var FIREBASE_CONFIG = {
         render(); return;
       }
       var who = members[id] || {};
+      /* ⚠ 共有リンクはボードに紐づくので、利用者を消しても失効しない。
+         旧「利用者ごとの閲覧リンク」は消せば失効したため、同じつもりで押されると
+         止めたはずのURLが生き残る。件数を出して、止め方まで書く。 */
+      var liveShares = Object.keys(shares).length;
       if (!confirm("この利用者を削除しますか？\n\n" + (who.name || who.mail || "") +
-                   "\n\n全部の部屋から外れ、このボードへ入れなくなります。\n" +
+                   "\n\n全部の部屋から外れ、ログインできなくなります。\n" +
                    "共有ボードに書かれた内容は残ります。\n\n" +
+                   "⚠ 渡してある共有リンクは、これでは止まりません" +
+                   (liveShares ? "（今 " + liveShares + "件）" : "") + "。\n" +
+                   "止めるときは、そのボードの「共有」から「共有をやめる」を押してください。\n\n" +
                    "元に戻すには「人を追加する」で、同じメールアドレスと" +
                    "そのパスワードを入れ直す必要があります。")) return;
 
@@ -1445,96 +1730,107 @@ var FIREBASE_CONFIG = {
         if (rid && rid.indexOf("/") < 0) dupd["rooms/" + rid + "/members/" + id] = null;
       });
       dupd["members/" + id] = null;
-      /* 閲覧リンクは台帳と写しの両方を落とす。片方だけ残すと URL が生きたままになる。 */
-      var vl = viewLinks[id], vtk = vl && vl.token;
-      if (vtk && !/^[A-Za-z0-9_-]{22,64}$/.test(vtk)) vtk = null;
-      dupd["viewLinks/" + id] = null;
-      if (vtk) { dupd["views/" + vtk] = null; delete viewSent[vtk]; }
-      /* 予約中の写しの更新が、消した直後に書き戻さないように止める */
-      delete viewLinks[id];
-      stopViewTimer();
 
       rtdb.ref().update(dupd)
         .then(function () {
           /* 画面に残った選択も落とす。残すと、次に部屋を作るときへ紛れ込む */
           delete ui.newRoomPick[id];
-          if (ui.showUrl === id) ui.showUrl = "";
           /* ログイン用のアカウントはアプリからは消せない。消し忘れると、その人は
              timecard 側のデータへ入れるままになるので、後始末の手がかりを必ず残す。 */
           ui.msg = (who.name || who.mail || "利用者") + " を削除しました。" +
+            (liveShares ? "渡してある共有リンク " + liveShares +
+              "件は止まっていません。止めるときは各ボードの「共有」から。" : "") +
             "ログイン用のアカウントは残っています。完全に止めるには、Firebase コンソールで " +
             (who.mail || "そのメールアドレス") + " のアカウントを無効化してください。";
-          syncViewsSoon(); render();
+          syncSharesSoon(); render();
         })
         .catch(function (err) {
-          /* 消せなかったら手元も元に戻す。戻さないと、生きているリンクを止められなくなる */
-          if (vl) viewLinks[id] = vl;
-          syncViewsSoon();
           ui.msg = "削除できませんでした（" + ((err && err.code) || "原因不明") + "）";
           render();
         });
       return;
     }
-    else if (act === "vnew") {
-      if (!id || !owns(members, id) || id === me.uid) return;
-      /* 部屋が0件だと見せる中身が無く、写しがルールの形チェックに通らない。
-         「作れませんでした」とだけ出ても分からないので、先に理由を出す。 */
-      if (!viewPayload(id).rooms.length) {
-        ui.msg = nameOfUid(id) + "はまだどの部屋にも入っていません。先に部屋へ入れてください。";
-        render(); return;
+    /* 共有リンクを作る。相手の利用者登録も、ボードのメンバー追加もしない。
+       作ったらそのままクリップボードへ入れる（「作る」と「コピー」で2回押させない）。 */
+    else if (act === "snew" || act === "sredo") {
+      /* 二度押しで、誰にも渡していないリンクがもう1本できるのを止める */
+      if (making) return;
+      var srid = ui.room, oldSid = "";
+      if (act === "sredo") {
+        if (!okId(id) || !owns(shares, id)) return;
+        if (!confirm("「" + (shares[id].name || "宛先なし") +
+                     "」の共有リンクを作り直します。前に渡したURLは使えなくなります。よろしいですか？")) return;
+        srid = shares[id].rid; oldSid = id;
       }
-      if (viewLinks[id] &&
-          !confirm(nameOfUid(id) + "の閲覧リンクを作り直します。前に渡したURLは使えなくなります。よろしいですか？")) return;
-      var prevLink = viewLinks[id], oldTk = prevLink && prevLink.token;
-      var tk = newToken();
-      if (!tk) { ui.msg = "このブラウザでは閲覧リンクを作れません。"; render(); return; }
-      var vj = JSON.stringify(viewPayload(id));
-      var vp = JSON.parse(vj); vp.updatedAt = now();
-      var vu = {};
-      if (oldTk) { vu["views/" + oldTk] = null; delete viewSent[oldTk]; }
-      vu["views/" + tk] = vp;
-      vu["viewLinks/" + id] = { token: tk, createdAt: now() };
-      viewSent[tk] = vj;
-      viewLinks[id] = { token: tk, createdAt: now() };   /* 手元も先に入れ替える */
-      stopViewTimer();
-      ui.showUrl = "";
-      rtdb.ref().update(vu)
+      if (!srid || !rooms[srid]) { ui.msg = "先に共有するボードを開いてください。"; render(); return; }
+      var stk = newToken();
+      if (!stk || !okToken(stk)) { ui.msg = "このブラウザでは共有リンクを作れません。"; render(); return; }
+      var sf = document.querySelector("#shareName");
+      var snm = act === "sredo" ? (shares[oldSid].name || "")
+        : ((sf ? sf.value : ui.shareName) || "").trim().slice(0, 60);
+      var nsid = uid(), su = {}, oldTk = oldSid && shares[oldSid] && shares[oldSid].token;
+      /* 台帳を先に手元へ入れてから写しを組み立てる（sharePayload が shares を見るため） */
+      shares[nsid] = { rid: srid, name: snm, token: stk, createdAt: now() };
+      var sj = JSON.stringify(sharePayload(nsid));
+      var spl = JSON.parse(sj); spl.updatedAt = now();
+      if (oldSid) { su["shares/" + oldSid] = null; }
+      if (okToken(oldTk)) { su["views/" + oldTk] = null; delete shareSent[oldTk]; }
+      su["shares/" + nsid] = shares[nsid];
+      su["views/" + stk] = spl;
+      shareSent[stk] = sj;
+      var prevOld = oldSid ? shares[oldSid] : null;
+      if (oldSid) delete shares[oldSid];
+      stopShareTimer();
+      ui.showUrl = ""; ui.shareName = "";
+      /* 入力欄の値も今すぐ空にする。render() の captureDrafts() が
+         まだ差し替わっていない DOM から読み戻して、宛先名が残ってしまうため。 */
+      if (sf) sf.value = "";
+      /* ⚠ クリップボードは「押した操作」の流れの中でしか書けない（Safari）。
+         DB の返事を待ってから書くと必ず失敗するので、ここで先に頼んでおく。 */
+      making = true;
+      var copying = clipWrite(viewUrl(stk));
+      rtdb.ref().update(su)
         .then(function () {
-          ui.msg = nameOfUid(id) + "の閲覧リンクを作りました。「リンクをコピー」で渡してください。";
-          syncViewsSoon(); render();
+          making = false;
+          copying.then(function () {
+            ui.showUrl = "";
+            ui.msg = "共有リンクを作りました。コピーしたので、相手に送ってください。";
+            render();
+          }, function () {
+            ui.showUrl = nsid;
+            ui.msg = "共有リンクを作りました。コピーできなかったので、下に出たURLを写して送ってください。";
+            render();
+          });
+          syncSharesSoon();
         })
         .catch(function (err) {
-          delete viewSent[tk];
           /* 手元を元に戻す。戻さないと、DBに無いURLを渡してしまう */
-          if (prevLink) viewLinks[id] = prevLink; else delete viewLinks[id];
-          syncViewsSoon();
-          ui.msg = "作れませんでした（" + ((err && err.code) || "原因不明") + "）"; render();
+          making = false;
+          delete shareSent[stk]; delete shares[nsid];
+          if (prevOld) shares[oldSid] = prevOld;
+          syncSharesSoon();
+          /* 先にコピーしてしまったURLは使えない。取り違えないよう必ず言う。 */
+          ui.msg = "作れませんでした（" + ((err && err.code) || "原因不明") +
+            "）。コピーされたURLは使えません。";
+          render();
         });
       return;
     }
-    else if (act === "vstop") {
-      if (!id || !owns(viewLinks, id) || !viewLinks[id]) return;
-      if (!confirm(nameOfUid(id) + "の閲覧リンクを止めます。渡したURLは使えなくなります。よろしいですか？")) return;
+    else if (act === "sstop") {
+      if (!okId(id) || !owns(shares, id)) return;
+      if (!confirm("「" + (shares[id].name || "宛先なし") +
+                   "」の共有をやめます。渡したURLは使えなくなります。よろしいですか？")) return;
       ui.showUrl = "";
-      dropView(id)
-        .then(function () { ui.msg = nameOfUid(id) + "の閲覧リンクを止めました。"; render(); })
+      dropShare(id)
+        .then(function () { ui.msg = "共有をやめました。渡したURLはもう読めません。"; render(); })
         .catch(function (err) {
           ui.msg = "止められませんでした（" + ((err && err.code) || "原因不明") + "）"; render();
         });
       return;
     }
-    else if (act === "vcopy") {
-      if (!id || !owns(viewLinks, id) || !viewLinks[id] || !viewLinks[id].token) return;
-      var vurl = viewUrl(viewLinks[id].token);
-      var okCopy = function () { ui.showUrl = ""; ui.msg = nameOfUid(id) + "のリンクをコピーしました。"; render(); };
-      var noCopy = function () {
-        ui.showUrl = id;
-        ui.msg = "コピーできませんでした。下に出たURLを選んで写してください。";
-        render();
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(vurl).then(okCopy, noCopy);
-      } else noCopy();
+    else if (act === "scopy") {
+      if (!okId(id) || !owns(shares, id) || !okToken(shares[id].token)) return;
+      copyLink(id, "リンクをコピーしました。相手に送ってください。");
       return;
     }
     else if (act === "doinvite") {
@@ -1629,6 +1925,7 @@ var FIREBASE_CONFIG = {
     var b = e.target.closest ? e.target.closest('[data-act="makeroom"]') : null;
     if (!b || !ui.editingRoom) return;
     var rid = ui.editingRoom; ui.editingRoom = null;
+    if (!okId(rid) || !rooms[rid]) return;      /* 開いている間に消えていたら何もしない */
     var mem = {}; mem[me.uid] = true;
     Object.keys(ui.newRoomPick).forEach(function (u) {
       if (ui.newRoomPick[u] && owns(members, u)) mem[u] = true;
@@ -1739,6 +2036,13 @@ var FIREBASE_CONFIG = {
       captureDrafts();
       var btn = e.target.parentNode.querySelector('button[data-act="addsend"]');
       if (btn) btn.click();
+      return;
+    }
+    if (e.target.id === "shareName") {
+      e.preventDefault();
+      captureDrafts();
+      var sb = document.querySelector('button[data-act="snew"]');
+      if (sb) sb.click();
     }
   });
 
@@ -1815,9 +2119,9 @@ var FIREBASE_CONFIG = {
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
   /* タブを閉じる・背面へ回すときは、書きかけを出しきる */
-  window.addEventListener("pagehide", function () { flushSaves(); flushViews(); });
+  window.addEventListener("pagehide", function () { flushSaves(); flushShares(); });
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { flushSaves(); flushViews(); }
+    if (document.hidden) { flushSaves(); flushShares(); }
   });
   document.addEventListener("pointerdown", function () { heldAt = Date.now(); }, true);
   function released() {
@@ -1855,9 +2159,10 @@ var FIREBASE_CONFIG = {
   auth.onAuthStateChanged(function (u) {
     ui.saving = ""; failed = {}; failMsg = "";
     if (!u) {
-      me = null; members = {}; viewLinks = {}; viewSent = {};
+      me = null; members = {};
       gotRooms = false; gotMembers = false; ui.open = {};
-      stopViewTimer(); dropViewSub(); unwatchAll(); render(); return;
+      ui.share = false; ui.showUrl = ""; ui.shareName = "";
+      stopShareTimer(); dropShareSub(); unwatchAll(); render(); return;
     }
     rtdb.ref("members/" + u.uid).on("value", function (snap) {
       var m = snap.val();
@@ -1881,33 +2186,49 @@ var FIREBASE_CONFIG = {
             v[rid].board = keepEditing(rooms[rid] && rooms[rid].board, normBoard(v[rid].board));
           });
           gotRooms = true;
-          if (same(v, rooms)) { syncViewsSoon(); return; }
-          rooms = v; syncViewsSoon(); render();
+          if (same(v, rooms)) { migrateLinks(); syncSharesSoon(); return; }
+          rooms = v; migrateLinks(); syncSharesSoon(); render();
+        }, function (e) {
+          /* ここが黙って落ちると gotRooms が立たず、共有リンクの中身が
+             未来永劫更新されない（消した行が残り続ける）。必ず知らせる。 */
+          ui.msg = "ボードを読めませんでした（" + ((e && (e.code || e.message)) || "原因不明") +
+            "）。共有リンクの中身は更新されません。開き直してください。";
+          render();
         });
         rtdb.ref("members").on("value", function (s) {
-          members = s.val() || {}; gotMembers = true; syncViewsSoon(); render();
+          members = s.val() || {}; gotMembers = true;
+          migrateLinks(); syncSharesSoon(); render();
         });
         /* 台帳は社長だけが読み書きする。ここを members に置くと、
            ほかの利用者が人のあいことばを読めてしまう。 */
-        if (!viewRef) {
-          viewRef = rtdb.ref("viewLinks");
-          viewRef.on("value", function (s) {
-            viewLinks = s.val() || {};
-            sweepViews(); syncViewsSoon(); render();
+        if (!shareRef) {
+          shareRef = rtdb.ref("shares");
+          shareRef.on("value", function (s) {
+            shares = s.val() || {};
+            sweepViews(); syncSharesSoon(); render();
           }, function (e) {
-            viewLinks = {};
-            ui.msg = "閲覧リンクの一覧を読めませんでした（" +
+            shares = {};
+            ui.msg = "共有リンクの一覧を読めませんでした（" +
               ((e && (e.code || e.message)) || "原因不明") + "）。このまま新しく作ると、前のURLが残ります。";
             render();
           });
         }
+        /* 旧「利用者ごとの閲覧リンク」。移行のためだけに読む。
+           移行が終われば空になり、以後この購読は何もしない。 */
+        if (!legacyRef) {
+          legacyRef = rtdb.ref("viewLinks");
+          legacyRef.on("value", function (s) {
+            legacyLinks = s.val() || {};
+            migrateLinks();
+          }, function () { legacyLinks = {}; });
+        }
       } else {
-        dropViewSub();
+        dropShareSub();
         rtdb.ref("members").on("value", function (s) { members = s.val() || {}; render(); }, function () {});
       }
 
       rtdb.ref("config").on("value", function (s) {
-        conf = s.val() || { ceoName: "谷口" }; syncViewsSoon(); render();
+        conf = s.val() || { ceoName: "谷口" }; syncSharesSoon(); render();
       });
       rtdb.ref("field").on("value", function (s) {
         var v = normField(s.val());

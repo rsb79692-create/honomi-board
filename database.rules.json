@@ -44,6 +44,28 @@
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true",
       ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true"
     },
+    "shares": {
+      ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
+      "$sid": {
+        "rid": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "token": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{22,64}$/)"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        },
+        ".validate": "newData.hasChildren(['rid','token'])"
+      }
+    },
     "viewLinks": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
       ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
@@ -63,14 +85,14 @@
     "views": {
       ".read": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
       "$token": {
-        ".read": "data.child('uid').exists() && root.child('viewLinks').child(data.child('uid').val()).child('token').val() === $token && root.child('members').child(data.child('uid').val()).child('active').val() === true",
+        ".read": "(data.child('sid').exists() && root.child('shares').child(data.child('sid').val()).child('token').val() === $token) || (data.child('uid').exists() && root.child('viewLinks').child(data.child('uid').val()).child('token').val() === $token && root.child('members').child(data.child('uid').val()).child('active').val() === true)",
         ".write": "auth != null && root.child('members').child(auth.uid).child('active').val() === true && root.child('members').child(auth.uid).child('role').val() === 'ceo'",
-        ".validate": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/) && newData.hasChildren(['uid','updatedAt','rooms'])",
-        "uid": {
+        ".validate": "$token.matches(/^[A-Za-z0-9_-]{22,64}$/) && newData.hasChildren(['sid','updatedAt','rooms'])",
+        "sid": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && !newData.val().contains('/')"
         },
         "who": {
-          ".validate": "newData.isString()"
+          ".validate": "newData.isString() && newData.val().length <= 60"
         },
         "updatedAt": {
           ".validate": "newData.isNumber()"

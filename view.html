@@ -106,11 +106,11 @@ var FIREBASE_CONFIG = {
       return;
     }
     var h = '<h1 class="name">穂乃味ボード</h1>';
-    if (v.who) h += '<p class="who">' + esc(v.who) + "さん向け</p>";
+    /* 宛先は社長が入れたそのままの文字。「さん」を足すと「谷村さんさん」になる。 */
+    if (v.who) h += '<p class="who">' + esc(v.who) + " 向け</p>";
 
-    var many = v.rooms.length > 1;
     v.rooms.forEach(function (r) {
-      if (many && r.name) h += '<p class="room">' + esc(r.name) + "</p>";
+      if (r.name) h += '<p class="room">' + esc(r.name) + "</p>";
       var secs = r.secs || [];
       if (!(secs instanceof Array)) secs = Object.keys(secs).map(function (k) { return secs[k]; });
       secs.forEach(function (s) {
