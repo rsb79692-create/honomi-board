@@ -866,6 +866,17 @@ var FIREBASE_CONFIG = {
       (ui.gateErr ? '<p class="err">' + esc(ui.gateErr) + "</p>" : "") + "</div>";
   }
 
+  /* ⚠⚠ ui.newRoomName を書き換えたら、**必ずこれを呼ぶこと**。
+     render() は先頭で captureDrafts() を呼ぶ（下）。パネルが既に開いていると、
+     そこで**まだ差し替わっていない古い入力欄**の値が ui.newRoomName へ巻き戻る。
+     そのまま「変える」を押すと、別のボードの名前を書き込んでしまう。
+     （「ボードA の変える → 設定を開き直す → ボードB の変える」で再現した）
+     入力欄の側を先に合わせておけば、巻き戻っても同じ値になる。 */
+  function syncRoomNameBox() {
+    var rn = document.querySelector("#roomName");
+    if (rn) rn.value = ui.newRoomName || "";
+  }
+
   function captureDrafts() {
     var a = document.querySelector("#addInput"); if (a) ui.addDraft = a.value;
     var ap = document.querySelector("#addPlace"); if (ap) ui.addPlace = ap.value;
@@ -997,14 +1008,18 @@ var FIREBASE_CONFIG = {
   }
 
   function newRoomHtml() {
-    var h = '<div class="panel"><h3>部屋を作る</h3>' +
-      '<div class="field"><label>部屋の名前</label>' +
-      '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="部屋の名前"></div>';
+    /* 同じ欄を「作る」と「変える」で使い回す。今どちらなのかを必ず画面に出すこと。 */
+    var ed = !!(ui.editingRoom && rooms[ui.editingRoom]);
+    var h = '<div class="panel"><h3>' + (ed ? "名前を変える" : "ボードを作る") + "</h3>" +
+      '<div class="field"><label>ボードの名前</label>' +
+      '<input id="roomName" value="' + esc(ui.newRoomName) + '" placeholder="ボードの名前"></div>';
     /* ⚠ 人を選ばせるのはやめた（旧「利用者」管理）。
        相手には「共有」からリンクを渡す。それが今の唯一の渡し方。 */
-    h += '<p class="hint">あなたのボードになります。' +
-      "相手へは、作ったあとに「共有」からリンクを渡せます。</p>";
-    return h + '<button class="btn" data-act="makeroom">作る</button>' +
+    h += ed
+      ? '<p class="hint">このボードの名前だけを変えます。中身も共有先もそのままです。</p>'
+      : '<p class="hint">あなたのボードになります。' +
+        "相手へは、作ったあとに「共有」からリンクを渡せます。</p>";
+    return h + '<button class="btn" data-act="makeroom">' + (ed ? "変える" : "作る") + "</button>" +
       '<button class="btn ghost" data-act="newroom" style="margin-left:8px">やめる</button></div>';
   }
 
@@ -1502,13 +1517,56 @@ var FIREBASE_CONFIG = {
     else if (act === "share") { ui.share = !ui.share; if (ui.share) ui.settings = false; ui.showUrl = ""; }
     else if (act === "newroom") {
       ui.newRoom = !ui.newRoom; ui.newRoomName = "";
-      /* ⚠ ここで消さないと「変える → やめる → ＋ → 作る」で、
-         下の capture 側が前に選んだボードの名前を黙って上書きする。 */
       ui.editingRoom = null;
+      syncRoomNameBox();
     }
     else if (act === "makeroom") {
       var nm = (ui.newRoomName || "").trim();
-      if (!nm) { ui.msg = "部屋の名前を入れてください。"; render(); return; }
+      /* ⚠⚠ 「作る」と「変える」は同じボタン。ここで必ず分岐させること。
+         以前は名前の変更だけを capture 側の別リスナーで処理していたが、
+         ① capture は captureDrafts() より前に走るので、入力欄に打った新しい名前が
+            まだ ui へ入っておらず、**元の名前を書き戻すだけ**になっていた
+         ② stopPropagation していないので、そのあと下の「作る」まで走り、
+            打った名前で**空のボードが新しく増えて**いた
+         分岐を1か所へ寄せて、既存のボードは同じ rid を更新するだけにする。 */
+      if (ui.editingRoom) {
+        var erid = ui.editingRoom;
+        ui.editingRoom = null;
+        /* 開いている間に消えていたら、黙って終わらない。ここで作りに回してもいけない。 */
+        if (!okId(erid) || !rooms[erid]) {
+          ui.newRoom = false; ui.newRoomName = "";
+          ui.msg = "このボードは無くなっています。";
+          render(); return;
+        }
+        /* ⚠ 直すのは名前だけ。members / board / partners は今あるものをそのまま残す。
+           ⚠ 空欄のときは今の名前のまま（消さない）。名前を付けていないボードは
+              name を持たないので、String() で必ず文字列に確定させる。
+              undefined を渡すと update() が**送信前に同期 throw** して、
+              何も出ないまま黙って落ちる。throw も拾うこと。 */
+        var nn = nm || String(rooms[erid].name || "");
+        var eupd = {};
+        eupd["rooms/" + erid + "/name"] = nn;
+        /* ⚠ 共有リンクにはボード名の写しが入っている（shareKeys/{token}/board）。
+           相手の招待ページはそれを見るので、ここで一緒に直さないと旧名のまま残る。
+           同じ update に混ぜて、名前と写しがずれた状態を作らない。 */
+        /* ⚠ sharesOf() が返すのは sid の配列（オブジェクトではない）。 */
+        sharesOf(erid).forEach(function (sid) {
+          var tk = shares[sid] && shares[sid].token;
+          if (tk) eupd["shareKeys/" + tk + "/board"] = String(nn).slice(0, 60);
+        });
+        var esending;
+        try { esending = rtdb.ref().update(eupd); }
+        catch (e2) { esending = Promise.reject(e2); }
+        esending.catch(function (err) {
+          ui.msg = "名前を変えられませんでした（" +
+            ((err && (err.code || err.message)) || "原因不明") + "）。開き直してください。";
+          render();
+        });
+        ui.newRoom = false; ui.newRoomName = "";
+        render();
+        return;
+      }
+      if (!nm) { ui.msg = "ボードの名前を入れてください。"; render(); return; }
       /* 作った人だけが入る。人を選ばせる仕組みは撤去した（旧「利用者」管理）。
          members/{uid}/rooms は、自分がどの部屋を見るかの索引として今も使う。 */
       var mem = {}; mem[me.uid] = true;
@@ -1526,10 +1584,13 @@ var FIREBASE_CONFIG = {
       return;
     }
     else if (act === "editroom") {
-      var r = rooms[id];
-      ui.newRoom = true; ui.newRoomName = r.name || "";
+      /* 変な id や、開いている間に消えたボードでは何もしない。
+         ここで rooms[id] を確認しないと、下の r.name で落ちて click ごと死ぬ。 */
+      if (!okId(id) || !rooms[id]) { ui.msg = "このボードは無くなっています。"; render(); return; }
+      ui.newRoom = true; ui.newRoomName = rooms[id].name || "";
       ui.editingRoom = id;
       ui.settings = false;
+      syncRoomNameBox();
     }
     else if (act === "delroom") {
       if (!okId(id) || !rooms[id]) return;
@@ -1759,29 +1820,6 @@ var FIREBASE_CONFIG = {
     }
     render();
   });
-
-  /* 部屋の作り直し（編集） */
-  document.addEventListener("click", function (e) {
-    var b = e.target.closest ? e.target.closest('[data-act="makeroom"]') : null;
-    if (!b || !ui.editingRoom) return;
-    var rid = ui.editingRoom; ui.editingRoom = null;
-    if (!okId(rid) || !rooms[rid]) return;      /* 開いている間に消えていたら何もしない */
-    /* ⚠ 直すのは名前だけ。members は既にある登録をそのまま残す。
-       人を選ばせる仕組みは撤去したので、ここで members を書き直すと
-       手元に無い登録を黙って消すことになる。 */
-    /* ⚠ 名前を付けていないボードは name を持たない（「経営ボード」と出す）。
-       空欄のまま保存すると値が undefined になり、update() が**送信前に同期 throw** して
-       alert も出ないまま黙って落ちる。必ず文字列に確定させ、throw も拾う。 */
-    var nn = (ui.newRoomName || "").trim() || String(rooms[rid].name || "");
-    var upd = {};
-    upd["rooms/" + rid + "/name"] = nn;
-    var sending;
-    try { sending = rtdb.ref().update(upd); }
-    catch (e2) { sending = Promise.reject(e2); }
-    sending.catch(function (err) {
-      alert("変更できませんでした（" + ((err && (err.code || err.message)) || "原因不明") + "）");
-    });
-  }, true);
 
   document.addEventListener("change", function (e) {
     var i = e.target;
