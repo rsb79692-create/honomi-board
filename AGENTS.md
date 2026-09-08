@@ -167,7 +167,9 @@ rooms/{rid}/partners/{sid} = { name }   右列の見出し。社長だけが書�
 
 ## 構成
 
-**単一ファイル**。`index.html` に HTML・CSS・JS が全て入っている（ビルドなし・npm なし・依存なし）。
+**ビルドなし・npm なし・依存なし。** 画面は `index.html`（本体）と `join.html`（共有リンクの入口）の
+**2ファイル**で、HTML・CSS・JS を各ファイル内に持つ（`join.html` は 2026-09-06 の `73f37fb` で追加）。
+このほか Admin 資格で RTDB を直接書く補助スクリプト `tools/*.js` がある。
 Firebase は CDN の compat SDK を script タグで読む（`firebase-app` / `firebase-auth` / `firebase-database` 10.12.2）。
 
 ```
