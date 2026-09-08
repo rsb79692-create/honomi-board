@@ -10,6 +10,9 @@
 > [`../_shared_claude/`](../_shared_claude/) を **single source of truth** として参照する。本 AGENTS.md には
 > **honomi-board 固有の事実とルール** を残し、共通項は重複させず参照に寄せる。共通ルールと矛盾した場合は、
 > **honomi-board 固有の「事実」（下記各セクションの記載）を優先**する。
+> **ただし「レビュー範囲」は本例外の対象外である。** 初回レビューと再確認の範囲、および
+> **広いレビューへ戻す条件**は [`../_shared_claude/AGENTS.md`](../_shared_claude/AGENTS.md)「レビュー範囲」を正本とし、
+> 本書・`CLAUDE.md`・`.claude/**`・`docs/**` で同節より狭い範囲を定めない（同節が honomi-board 側の記載に優先する）。
 
 honomi-board は技術構成タイプ **Type C（Firebase + GitHub Pages）**。timecard-git と同型。
 
