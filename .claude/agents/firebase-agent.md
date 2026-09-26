@@ -32,14 +32,18 @@ RTDB のデータ構造・アクセスルール・認証・共有リンクを担
 RTDB は `honomi-timecard-default-rtdb`（asia-southeast1）で、**アクセスルールは1ファイルに同居**する。
 この共有関係は honomi-board のコードを読んでも気づけない（詳細は `AGENTS.md`「最重要: Firebase プロジェクトを timecard と共有している」）。
 
-### 所有範囲（2026-09-06 実測）
+### 所有範囲（2026-09-26 実測）
 
 | トップレベル | 所有 |
 |---|---|
 | `honomi` | **timecard 専用**（`tc5_records` に `.indexOn: ["date"]`。実データ4400件超） |
+| `tenants` | **timecard 専用**（マルチテナント。`tenantReg` を参照する） |
 | `rooms` / `members` / `config` / `field` | honomi-board |
 | `shares` / `shareKeys` / `guestOf` | honomi-board（共有リンク） |
-| `mileage` / `authz` / `ratelimit` | ルール未定義（Admin SDK 経由でのみ利用） |
+| `tenantReg` / `srv` / `mileage` / `authz` / `ratelimit` | ルール未定義（Admin SDK 経由でのみ利用） |
+
+★ **本リポジトリの `database.rules.json` は timecard-git の同名ファイルと同一内容である**（本番の写し）。
+timecard 側が単独で deploy するため、**手元の控えを正とせず、deploy 前に必ず本番を取り直してマージする**（下記手順 1）。
 
 ★ 旧名 `views` / `viewLinks` は **2026-09-06 の `73f37fb` で `shareKeys` / `guestOf` へ改名済み**であり、
 現在の `database.rules.json` に存在しない（`shares` だけは旧構成にもあった）。
@@ -56,12 +60,12 @@ RTDB は `honomi-timecard-default-rtdb`（asia-southeast1）で、**アクセス
    取得したルールの top-level キーを列挙し、上表のどちらの所有かを1つずつ確定する。
    **上表に無いキーが増えていたら、勝手に消さず停止して報告する**（timecard 側が足した可能性がある）
 3. **必要箇所だけをマージする。** board が変更するのは board 所有キーのみ。
-   `honomi` ブロックは**1文字も触らない**
+   `honomi` / `tenants` ブロックは**1文字も触らない**
 4. **deploy 前検証**: マージ後の JSON を `node -e` 等でパースし、
-   ①構文が有効 ②`honomi` ブロックが取得時とバイト一致 ③board 所有キーが7つ揃っている、を確認する
+   ①構文が有効 ②`honomi` / `tenants` ブロックが取得時とバイト一致 ③board 所有キーが7つ揃っている ④取得時の top-level キーがすべて残っている、を確認する
 5. **deploy**: `firebase deploy --only database --project honomi-timecard`
 6. **deploy 後に再取得して照合する**。
-   ⚠ **`honomi` ブロックが取得時と一致していることを実測で確認するまで、完了と報告してはならない。**
+   ⚠ **`honomi` / `tenants` ブロックが取得時と一致していることを実測で確認するまで、完了と報告してはならない。**
    ⚠ 併せて board 所有キーも再確認する（マージ漏れで `shareKeys` / `guestOf` が消えていないか）
 7. timecard 側の生存確認（`honomi/tc5_records` が読めること）を行う
 
@@ -88,7 +92,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 
 ## プロジェクト固有ルール（厳守）
 
-- **`honomi` ブロックを含まないルールをデプロイしない**（`AGENTS.md`「禁止事項」）
+- **`honomi` / `tenants` ブロックを含まないルールをデプロイしない**（`AGENTS.md`「禁止事項」）
 - **匿名認証・メール／パスワード認証を無効化しない。** 匿名は timecard の起動経路であり、
   メール／パスワードは招待フロー（`createUserWithEmailAndPassword`）が使うためサインアップ自体を無効化できない
 - **`members/$uid` の `.write` に自己登録（`auth.uid === $uid && !data.exists()`）を許してはならない。**
@@ -124,7 +128,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 `REPORT.md` の様式に従い、加えて以下を必ず含める。
 
 - 変更したルールの**キー単位の差分**（追加 / 変更 / 削除）
-- **deploy 前に取得した `honomi` ブロックと、deploy 後に再取得した `honomi` ブロックの照合結果**
+- **deploy 前に取得した `honomi` / `tenants` ブロックと、deploy 後に再取得した `honomi` / `tenants` ブロックの照合結果**
 - board 所有7キー（`rooms` / `members` / `config` / `field` / `shares` / `shareKeys` / `guestOf`）の生存確認
 - 権限の実測結果（誰が・どのパスへ・GET / PUT で・何が返ったか）
 - 検証で作成したデータの後始末が完了したこと

@@ -46,7 +46,7 @@ DB の形も変えた場合の全体順序:
 
 ★ **ルールの deploy は firebase-agent の担当であり、ship-agent は実行しない。**
 ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
-**firebase-agent の deploy 完了と `honomi` ブロック照合の完了を確認してから** push する。
+**firebase-agent の deploy 完了と `honomi` / `tenants` ブロック照合の完了を確認してから** push する。
 
 ## 出荷手順（これを正とする）
 
@@ -103,7 +103,7 @@ ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
 
 - commit ID（7桁以上）と push 先（`origin main`）
 - stage した対象一覧と、**他作業の差分を巻き込んでいないこと**
-- ルール変更を伴ったか。伴った場合は firebase-agent の deploy と `honomi` ブロック照合の結果
+- ルール変更を伴ったか。伴った場合は firebase-agent の deploy と `honomi` / `tenants` ブロック照合の結果
 - Pages 反映確認の結果（ポーリングで何が変わったか）
 - 本番 URL の HTTP ステータスと、実ログインでの console エラー件数
 

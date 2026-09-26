@@ -203,18 +203,26 @@ honomi-board/
 | トップレベル | 用途 |
 |---|---|
 | `honomi` | **timecard 専用**（`tc5_records` に `.indexOn: ["date"]`。実データ4400件超） |
+| `tenants` | **timecard 専用**（マルチテナント。`tenantReg` を参照して判定する） |
 | `rooms` / `members` / `config` / `field` | ボード |
 | `shares` / `shareKeys` / `guestOf` | ボード（共有）。**マージ時に落とすと全員の共有が死ぬ** |
-| `mileage` / `authz` / `ratelimit` | ルール未定義＝クライアントからは不可視。Admin SDK 経由で使用 |
+| `tenantReg` / `srv` / `mileage` / `authz` / `ratelimit` | ルール未定義＝クライアントからは不可視。Admin SDK 経由で使用 |
+
+⚠⚠ **このリポジトリの `database.rules.json` は、timecard-git の `database.rules.json` と同一内容である。**
+本番の Rules も同じ1ファイルで、どちらのリポジトリの控えも本番の写しにすぎない
+（2026-09-26 に本番・timecard-git・本リポジトリの3者が完全一致することを実測）。
+timecard 側は本リポジトリを通さずに Rules を deploy するので、**手元の控えは古くなっている前提で扱う**。
 
 `firebase deploy --only database` は**ルール全体を置換する**。ボード側だけをデプロイすると timecard が即死する。
+手元の古い控えのまま deploy すると、timecard 側で後から足した `honomi` / `tenants` の変更を巻き戻す。
 
 **変更手順（必須）**
-1. 本番の現行ルールを取得する
+1. **deploy の前に必ず本番の現行ルールを取り直す**（手元の `database.rules.json` を正としない）
    `GET https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app/.settings/rules.json`
    （サービスアカウントの OAuth2 アクセストークンを `Authorization: Bearer` で渡す）
-2. 既存キーを保持したままマージする
-3. デプロイ後に取得し直し、**`honomi` ブロックが不変であること**を照合する
+2. 取り直した本番の内容へボード側の変更をマージする（既存キーを保持する）
+3. デプロイ後に取得し直し、**`honomi` / `tenants` ブロックが不変であること**を照合する
+4. deploy したら、timecard-git の `database.rules.json` も同じ内容へ揃えて commit する（逆も同じ）
 
 ### Firebase Auth
 - **匿名認証は timecard の起動経路。絶対に無効化しない。**
@@ -334,6 +342,14 @@ guestOf/{uid}/{rid} = sid                                        ← 相手が�
 
 ⚠⚠ **これは timecard-git の持ち物だが、ルールは同じファイルに同居している。**
 片方だけを直すことはできない。変えるときは必ず両リポジトリを同時に扱うこと。
+
+⚠ **この節は 2026-09-06 時点の記述で、その後の timecard のマルチテナント化を反映していない。**
+2026-09-26 時点の本番ルールでは、`honomi` の条件に `auth.token.c == null || auth.token.c === 'honomi'`
+（他社テナントのトークンを締め出す）が加わった。
+各社のデータは `tenants/$cid`（`c` クレームと `tenantReg` で判定。匿名の起動面は無い）に分かれ、
+そちらには役割 `k`（打刻端末）がある（`honomi` 側には `k` は無い）。
+**`honomi` / `tenants` の認可の正は `database.rules.json` そのものと timecard-git の `AGENTS.md`**とし、
+下の表で判断しないこと。下記「残っている穴」（匿名で `tc5_pins` を読める）は `honomi` については今も当てはまる。
 
 **それまでの状態（穴）**
 
@@ -679,7 +695,7 @@ RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bear
 `oauth2.googleapis.com/token`（client_id / client_secret は firebase-tools の
 `lib/api.js` にある既定値）でアクセストークンへ交換し、
 `GET https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app/.settings/rules.json`
-を `Authorization: Bearer` で叩く。**ルール変更の前後で `honomi` ブロックを照合するのに使う**。
+を `Authorization: Bearer` で叩く。**ルール変更の前後で `honomi` / `tenants` ブロックを照合するのに使う**。
 ⚠ トークンを表示・保存・commit しないこと。
 
 ページ内で別人として試すときは `firebase.initializeApp(FIREBASE_CONFIG, "別名")` ＋
@@ -689,7 +705,7 @@ RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bear
 
 ## 禁止事項（固有の上乗せ）
 
-- `honomi` ブロックを含まないルールをデプロイしない
+- `honomi` / `tenants` ブロックを含まないルールをデプロイしない
 - 匿名認証・メール／パスワード認証を無効化しない
 - 旧版 HTML やサービスアカウント鍵をコミットしない
 - 部屋のメンバー構成・投稿は業務データ。検証で書いたものは必ず消す

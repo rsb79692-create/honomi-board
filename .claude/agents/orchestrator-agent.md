@@ -55,7 +55,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 実行しても何も壊れない。だから移行を先に済ませてよい。
 
 **orchestrator は、ship-agent を起動する前に firebase-agent の deploy 完了と
-`honomi` ブロック照合の完了を必ず確認する。**
+`honomi` / `tenants` ブロック照合の完了を必ず確認する。**
 
 ## 出荷条件
 
@@ -81,7 +81,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 
 ## プロジェクト固有ルール（厳守）
 
-- **`honomi` ブロックを含まないルールをデプロイさせない**
+- **`honomi` / `tenants` ブロックを含まないルールをデプロイさせない**
 - **匿名認証・メール／パスワード認証を無効化させない**
 - **旧版 HTML・サービスアカウント鍵をコミットさせない**（GitHub Pages は直下を丸ごと配信する）
 - **部屋のメンバー構成・投稿は業務データ。** 検証で書いたものは必ず消させる
@@ -95,6 +95,6 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 
 - 起動した agent の**正式名称**と担当内容、実行中 agent 数、停止済み agent 一覧
 - 専門 agent（security / ui-print / performance）の起動条件への該当有無と、その判断理由
-- timecard への影響の有無と、`honomi` ブロック照合の結果（ルール変更を伴った場合）
+- timecard への影響の有無と、`honomi` / `tenants` ブロック照合の結果（ルール変更を伴った場合）
 - commit ID・push 結果・Pages 反映確認・本番確認
 - 未確認事項（確認できなかったものを確認済みとして報告しない）

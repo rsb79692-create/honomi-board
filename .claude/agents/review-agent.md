@@ -26,7 +26,7 @@ description: "コードレビュー専門担当。設計レビュー・副作用
   「上位で広く許可し、下位で絞る」書き方になっていないか。上位を厳しくし、下位で足す形か
 - ⚠ **`members/$uid` の `.write` に自己登録（`auth.uid === $uid && !data.exists()`）が入っていないか。**
   匿名認証が有効なため、入ると誰でも自分を `ceo` として登録できる（2026-09-04 に本番で再現・`834dfde` で修正済み）
-- ★ **`honomi` ブロックが差分に含まれていないか。** ここは timecard 専用であり、board 側から触らない
+- ★ **`honomi` / `tenants` ブロックが差分に含まれていないか。** ここは timecard 専用であり、board 側から触らない（本番・timecard-git と同一内容へ揃える同期コミットだけは例外。その場合は3者の一致を確認する）
 - ★ **board 所有7キー**（`rooms` / `members` / `config` / `field` / `shares` / `shareKeys` / `guestOf`）が
   そろっているか。マージで落ちていないか。**旧名 `views` / `viewLinks` が復活していないか**
 - `$other` の `.validate: false` が外れていないか（未知フィールドの流入）
