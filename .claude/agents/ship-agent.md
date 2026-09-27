@@ -44,6 +44,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 deploy が�
 
 DB の形も変えた場合の全体順序:
 **データ移行（`tools/migrate-duo.js --apply`）→ ルール deploy → push → Pages 反映確認 → 社長でログイン**
+（`--apply` とルール deploy はユーザーの明示承認後に firebase-agent が行う。push 自体はこの承認を要しない）
 
 ★ **ルールの deploy は firebase-agent の担当であり、ship-agent は実行しない。**
 ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
@@ -61,7 +62,7 @@ ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
 7. git push origin main
 8. Pages 反映を待つ（数十秒〜数分）    # curl でサイズか特定文字列が変わるまでポーリング
 9. curl https://rsb79692-create.github.io/honomi-board/  # HTTP 200 と想定文字列
-10. ブラウザで実ログインし、console エラー0件を確認
+10. ブラウザで実ログインし、console エラー0件を確認（ログインの入力は人が行う。`AUTH.md` §4）
 11. 報告に commit ID を記載
 ```
 

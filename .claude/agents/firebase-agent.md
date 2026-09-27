@@ -63,7 +63,7 @@ timecard 側が単独で deploy するため、**手元の控えを正とせず�
    `honomi` / `tenants` ブロックは**1文字も触らない**
 4. **deploy 前検証**: マージ後の JSON を `node -e` 等でパースし、
    ①構文が有効 ②`honomi` / `tenants` ブロックが取得時とバイト一致 ③board 所有キーが7つ揃っている ④取得時の top-level キーがすべて残っている、を確認する
-5. **deploy**: `firebase deploy --only database --project honomi-timecard`
+5. **deploy**: 4 の結果（マージ差分・照合結果）を提示し、**ユーザーの明示承認を得てから** `firebase deploy --only database --project honomi-timecard`
 6. **deploy 後に再取得して照合する**。
    ⚠ **`honomi` / `tenants` ブロックが取得時と一致していることを実測で確認するまで、完了と報告してはならない。**
    ⚠ 併せて board 所有キーも再確認する（マージ漏れで `shareKeys` / `guestOf` が消えていないか）
@@ -78,6 +78,8 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 
 ⚠ **DB の形を変えたときは、ルール deploy より前にデータ移行を済ませる。**
 順序は **移行（`tools/migrate-duo.js --apply`）→ ルール deploy → push → Pages 反映確認 → 社長でログイン**。
+
+★ **本番への直接変更のため、実行前にユーザーの明示承認を得る**（`firebase deploy --only database` は timecard 共有の本番ルール置換、`tools/*.js --apply` は本番データの一括書込み。`firebase database:set/update/remove`・オーナー権限 REST の PUT/PATCH/DELETE・Admin SDK による本番 RTDB / Auth への書込みも経路を問わず同じ。マージ結果の差分・照合計画・対象件数を提示する。共通 `RULES.md`「安全」／`PROJECT_TYPES.md` Type C）。通常の `index.html` の変更と push はこの承認を要しない。
 
 ## 自動選択トリガー
 
@@ -101,7 +103,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
   「上位で広く許可し、下位で絞る」は機能しない。上位を厳しくし、下位で足す
 - **`index.html` / `join.html` は変更しない** — 画面ロジックは debug-agent の担当
 - **サービスアカウント鍵・idToken・アクセストークンを表示・保存・commit しない**
-- **本番の業務データ（部屋・投稿・名簿）を検証で書き換えない。** 検証用の部屋を作り、最後に必ず全部消す
+- **本番の業務データ（部屋・投稿・名簿）を検証で書き換えない。** 検証用の部屋を作る場合は本番への書込みのため実行前にユーザーの承認を得て、最後に必ず全部消す
 - **UID を使う破壊的操作の前に必ず空チェックする。**
   シェル変数が空のまま `curl -X DELETE ".../members/$UID.json"` を実行すると `/members` 丸ごと削除になる。
   `/members` が消えるとアプリの購読が `!m` を検知して**全ユーザーを自動 signOut する**

@@ -216,7 +216,7 @@ timecard 側は本リポジトリを通さずに Rules を deploy するので�
 `firebase deploy --only database` は**ルール全体を置換する**。ボード側だけをデプロイすると timecard が即死する。
 手元の古い控えのまま deploy すると、timecard 側で後から足した `honomi` / `tenants` の変更を巻き戻す。
 
-**変更手順（必須）**
+**変更手順（必須。deploy はユーザーの明示承認後。firebase-agent 参照）**
 1. **deploy の前に必ず本番の現行ルールを取り直す**（手元の `database.rules.json` を正としない）
    `GET https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app/.settings/rules.json`
    （サービスアカウントの OAuth2 アクセストークンを `Authorization: Bearer` で渡す）
@@ -507,7 +507,7 @@ UI だけ直すと、現場の書き込みが `PERMISSION_DENIED` で無音の�
 `DEPLOY.md` の commit→push→health→commit ID 記載 という骨子は流用可。ただし **Vercel は使っていない**。
 
 1. `index.html` を編集
-2. **ルールを変えたなら、先に `firebase deploy --only database --project honomi-timecard`**
+2. **ルールを変えたなら、先に `firebase deploy --only database --project honomi-timecard`**（ユーザーの明示承認後）
    （上記「変更手順」を必ず守る）
 3. commit → push（main / ルート）
 4. **GitHub Pages の反映を待つ**（数十秒〜数分。`curl` でサイズか特定文字列が変わるまでポーリングする）
@@ -666,15 +666,18 @@ npm script は無い。型チェック・build・lint・Playwright・Jest はい
 
 実際に使える手は4つ。目的で使い分ける。
 
+★ 1・3 は本番の Auth / RTDB を使う（2 は禁止）。**本番へのアカウント・検証用の部屋の作成と書込みは、経路（CLI・REST・Admin SDK・`tools/*.js`）を問わず実行前にユーザーの承認を得る**（共通 `AGENTS.md`「UIの完了判定（deploy 後）」）。承認不要なのはルール判定と検証用パスの読み取りだけで、実データ（部屋・投稿・名簿）を出力・報告しない。ログインの入力は人が行う（`AUTH.md` §4）。
+
 **1. 共有相手・第三者 … 公開 apiKey で本物のアカウントを作る**
 `POST https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=<apiKey>` に
 `{email, password, returnSecureToken:true}` を投げると idToken が返る。これが
 `join.html` のやっていることそのものなので、**本物の共有相手として**ルールを試せる。
 RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bearer` は 401）。
 後始末は `POST /v1/accounts:delete` に `{idToken}` で**自分で消せる**（アプリからは消せないが、
-本人の idToken があれば消える）。検証用の部屋・共有は Admin 経由で作り、最後に必ず全部消す。
+本人の idToken があれば消える）。検証用の部屋・共有は（ユーザー承認後に）Admin 経由で作り、最後に必ず全部消す。
 
 **2. 社長（谷口） … 本人のブラウザに生きているセッションを borrow する**
+⚠ **既存利用者の実トークン借用は共通 `RULES.md`「性能」「完成の判定」で禁止。使わず 3 で代替する**（以下は記録として残す）。
 本番を開いた状態で `firebase.auth().currentUser.getIdToken()` を取り、
 そのページ内から `fetch` で REST を叩く。**実データではなく検証用の部屋に対して**行うこと。
 ⚠ 重い処理を1回の評価にまとめるとレンダラが固まる。トークン取得と fetch は分けて、
@@ -688,7 +691,7 @@ RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bear
 `{"uid":"x","token":{"r":"s"}}` のように **`token` の下**へ入れること。
 `{"uid":"x","r":"s"}` と書くと `auth.token.r` は null のままで、全部 401 になる（2026-09-06 に踏んだ）。
 未認証は `auth_variable_override=null`。
-⚠ 判定させるだけではなく**本当に読み書きされる**。書きの確認は必ず捨て値のキーへ行い、後で消すこと。
+⚠ 判定させるだけではなく**本当に読み書きされる**。書きの確認は（ユーザー承認後に）必ず捨て値のキーへ行い、後で消すこと。
 
 **4. RTDB のルール本文を読む … firebase CLI の資格情報を使う**
 `~/.config/configstore/firebase-tools.json` の `refresh_token` を
@@ -699,7 +702,7 @@ RTDB へは `?auth=<idToken>` を付けて REST を叩く（`Authorization: Bear
 ⚠ トークンを表示・保存・commit しないこと。
 
 ページ内で別人として試すときは `firebase.initializeApp(FIREBASE_CONFIG, "別名")` ＋
-`Persistence.NONE` にすれば**本人のセッションを壊さずに**検証できる。
+`Persistence.NONE` にすれば**本人のセッションを壊さずに**検証できる（サインインの入力は人が行う）。
 
 ---
 
