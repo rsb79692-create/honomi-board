@@ -31,9 +31,10 @@ ship-agent 自身はコードを変更しない。すべての変更は事前に
   無い限り、確認待ちを挟まず **commit → push → Pages 反映確認 → 本番確認まで進める**。
 - ただし以下は出荷せず停止して報告する。
   - 共通 `RULES.md`「安全」の停止条件に該当する
-  - 共通 `AGENTS.md`「出荷条件」が未達（Critical 0 / High 0 / review 完了 / QA 完了）
-  - qa-agent の総合判定が「要修正」
-  - stage 対象が 0 件
+  - ship で自動解消できない失敗（権限・認証不足・non-fast-forward 等）
+- 共通 `AGENTS.md`「出荷条件」の未達（Critical 0 / High 0 / review 完了 / QA 完了）や qa-agent の「要修正」は、
+  出荷せず依頼元へ返し、修正→再検証へ戻す（同一原因3回で停止）。
+- 依頼範囲の変更が 0 件なら commit / push せず報告して終了する。
 
 ## ★ 出荷順序（厳守）
 
@@ -54,7 +55,7 @@ ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
 1. git status --short                  # 着手前の状態を記録。他作業の差分を把握する
 2. （ルール変更を伴う場合）firebase-agent の deploy 完了と honomi ブロック照合の完了を確認
 3. git add <対象ファイル>              # パス指定のみ。git add -A / . は禁止
-4. git diff --cached --name-only       # 0 件なら停止。依頼範囲外が混ざっていたら unstage
+4. git diff --cached --name-only       # 0 件なら commit / push せず報告して終了。範囲外は unstage
 5. git diff --cached                   # secret・idToken・サービスアカウント鍵・実メールが無いこと
 6. git commit -m "<message>"           # 日本語の短い1行 + 必要なら本文
 7. git push origin main
@@ -72,7 +73,7 @@ ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
 | pushして / commitして | ship-agent を起動 |
 | デプロイして / 本番に上げて / 公開して | ship-agent を起動 |
 | リリースして | ship-agent を起動 |
-| 問題なければ出荷して | qa-agent 確認OK後 → ship-agent を起動 |
+| 問題なければ出荷して | qa-agent 出荷可の後 → ship-agent を起動 |
 
 ## 複数 Agent が該当する場合の実行順序
 
@@ -95,7 +96,7 @@ ship-agent は「ルール変更を伴う出荷か」を確認し、伴うなら
   （commit 前に `git diff --cached --name-only` でこれらが混ざっていないことを必ず確認する）
 - **`vercel --prod` を実行しない**（このプロジェクトは Vercel を使っていない）
 - **force push しない**
-- **判断に迷ったら停止して報告する**
+- 判断に迷うだけでは停止しない（共通 `RULES.md`「安全」）
 
 ## 報告
 
