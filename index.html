@@ -846,7 +846,7 @@ var FIREBASE_CONFIG = {
 
   /* その行を直す・消してよいか。描く前だけでなく、実際に書き換える入口でも通す。
      ⚠ これは画面の一貫性のための担保であって、認可ではない。
-        board はリストごと置き換える方式なので、ルール層では行単位に縛れない（AGENTS.md）。 */
+        board はリストごと置き換える方式なので、ルール層では行単位に縛れない（docs/records/2026-10-01-known-open-issues.md）。 */
   function canEditRow(key, it) {
     if (!it || !me) return false;
     /* 現場マネジメントは今までどおり「本人と社長だけ」。 */
@@ -1123,7 +1123,7 @@ var FIREBASE_CONFIG = {
      （board はリストごと置き換えるので、by === auth.uid を .validate で強制すると
        他人の行を含むリストが書けなくなる）。
      そのため、せめて**その部屋にいない人の名前は出さない**。
-     同じ部屋のメンバー同士の名乗りは UI 層でしか担保できない（AGENTS.md の既知事項）。 */
+     同じ部屋のメンバー同士の名乗りは UI 層でしか担保できない（docs/records/2026-10-01-known-open-issues.md）。 */
   function stamp(ts) {
     if (typeof ts !== "number" || !isFinite(ts) || ts <= 0) return "";
     var d = new Date(ts);

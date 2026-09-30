@@ -51,7 +51,7 @@ RTDB のルールは1ファイルに timecard（`honomi`）とボード（`rooms
 また **GitHub Pages はリポジトリ直下を丸ごと配信する**ため、旧版 HTML をコミットすると
 本番URLから誰でも閲覧できてしまう。`_old/` と `_backup_*/` は gitignore のまま維持すること。
 
-詳細な運用ルール・データ構造・過去に踏んだ罠は [`AGENTS.md`](AGENTS.md) を参照。
+運用ルールは [`AGENTS.md`](AGENTS.md)、データ構造・機能の詳細は `docs/features/`、設計理由は `docs/decisions/`、過去に踏んだ罠・経緯は `docs/records/` を参照。
 
 ## ディレクトリ
 

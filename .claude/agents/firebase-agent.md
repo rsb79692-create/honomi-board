@@ -5,7 +5,7 @@ description: "Firebase RTDB・アクセスルール・Email/Password 認証・�
 
 # Firebase Agent — 穂乃味ボード
 
-> 共通ルール・環境情報は **`AGENTS.md`**（RTDB 構造・アクセス制御・共有の認可の正本）を参照。
+> 共通ルール・環境情報は **`AGENTS.md`**（RTDB・アクセス制御・共有の認可の不変条件。詳細は `docs/features/`）を参照。
 > 全リポジトリ共通の運用ルールは [`../../../_shared_claude/`](../../../_shared_claude/) を参照
 > （[DB](../../../_shared_claude/DB.md)・[RULES](../../../_shared_claude/RULES.md)・[AGENTS](../../../_shared_claude/AGENTS.md)・[REPORT](../../../_shared_claude/REPORT.md)・[PROJECT_TYPES](../../../_shared_claude/PROJECT_TYPES.md)）。
 > honomi-board = **Type C（Firebase + GitHub Pages）**。
@@ -30,7 +30,7 @@ RTDB のデータ構造・アクセスルール・認証・共有リンクを担
 
 **`honomi-board` と `timecard-git` は同一 Firebase プロジェクト `honomi-timecard` を共有している。**
 RTDB は `honomi-timecard-default-rtdb`（asia-southeast1）で、**アクセスルールは1ファイルに同居**する。
-この共有関係は honomi-board のコードを読んでも気づけない（詳細は `AGENTS.md`「最重要: Firebase プロジェクトを timecard と共有している」）。
+この共有関係は honomi-board のコードを読んでも気づけない（規則は `AGENTS.md`「DB・共有・データ保護の不変条件」、詳細は `docs/features/firebase-shared-rules.md`）。
 
 ### 所有範囲（2026-09-26 実測）
 
@@ -55,7 +55,7 @@ timecard 側が単独で deploy するため、**手元の控えを正とせず�
 
 1. **本番の現行ルールを取得する**
    `GET https://honomi-timecard-default-rtdb.asia-southeast1.firebasedatabase.app/.settings/rules.json`
-   （`AGENTS.md`「パスワード無しで各ユーザーとして本番検証する方法」4 の資格情報。`Authorization: Bearer`）
+   （`docs/features/operations.md`「パスワード無しで各ユーザーとして本番検証する方法」4 の資格情報。`Authorization: Bearer`）
 2. **board 所有範囲と timecard 所有範囲を突き合わせる。**
    取得したルールの top-level キーを列挙し、上表のどちらの所有かを1つずつ確定する。
    **上表に無いキーが増えていたら、勝手に消さず停止して報告する**（timecard 側が足した可能性がある）
@@ -111,7 +111,7 @@ GitHub Pages は push で即反映されるが、ルールは別途 `firebase de
 
 ## 権限の実測手順
 
-`AGENTS.md`「パスワード無しで各ユーザーとして本番検証する方法」の4手段を目的で使い分ける。
+`docs/features/operations.md`「パスワード無しで各ユーザーとして本番検証する方法」の4手段を目的で使い分ける。
 
 - ユーザーの idToken は `?auth=<idToken>` クエリで渡す。**`Authorization: Bearer <idToken>` は 401**
   （Bearer はサービスアカウントの OAuth2 アクセストークン専用）

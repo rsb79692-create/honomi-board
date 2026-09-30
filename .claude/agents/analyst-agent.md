@@ -55,7 +55,7 @@ deploy 後再取得 → `honomi` / `tenants` ブロック照合）を修正案�
 ## 調査手段（実在するもの）
 
 - `database.rules.json` の直読み（構造・所有範囲）
-- 本番ルールの取得（`.settings/rules.json`。`AGENTS.md`「パスワード無しで各ユーザーとして本番検証する方法」4）
+- 本番ルールの取得（`.settings/rules.json`。`docs/features/operations.md`「パスワード無しで各ユーザーとして本番検証する方法」4）
 - `auth_variable_override` による「その auth ならどうなるか」のサーバ判定
   ⚠ カスタムクレームは **`token` の下**（`{"uid":"x","token":{"r":"s"}}`）。未認証は `null`
   ⚠ **判定させるだけでなく本当に読み書きされる。** 書込みを伴う確認は analyst-agent では行わず firebase-agent に委ねる（本番書込みはユーザー承認後）
